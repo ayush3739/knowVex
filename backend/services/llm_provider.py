@@ -52,26 +52,52 @@ def _get_model_slug(provider_id: str, default_slug: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# In-Memory 429 Cooldown Tracking
+# In-Memory 429 Cooldown Tracking & 0ms Skip Engine
 # ---------------------------------------------------------------------------
 
 _COOLDOWNS: dict[str, float] = {}
 
 
 def is_healthy(provider_name: str) -> bool:
-    """Return True if the provider is not currently in a rate-limit cooldown window."""
-    return time.time() >= _COOLDOWNS.get(provider_name, 0.0)
+    """
+    Return True if the provider is not currently in a rate-limit cooldown window.
+    Supports exact, normalized, and prefix matching (e.g. 'groq' matches 'Groq GPT-OSS 120B').
+    """
+    now = time.time()
+    if now < _COOLDOWNS.get(provider_name, 0.0):
+        return False
+
+    # Check normalized root prefix (e.g. 'groq', 'gemini', 'gonka')
+    p_prefix = provider_name.lower().split()[0].replace("-", "").replace("_", "")
+    for key, expiry in _COOLDOWNS.items():
+        if expiry > now:
+            k_prefix = key.lower().split()[0].replace("-", "").replace("_", "")
+            if p_prefix == k_prefix or p_prefix in key.lower():
+                return False
+    return True
 
 
-def mark_rate_limited(provider_name: str, cooldown_seconds: float = 60.0) -> None:
-    """Mark a provider in cooldown to skip network calls during rate-limit bursts in 0ms."""
-    _COOLDOWNS[provider_name] = time.time() + cooldown_seconds
-    expiry = time.strftime("%H:%M:%S", time.localtime(_COOLDOWNS[provider_name]))
+def mark_rate_limited(provider_name: str, cooldown_seconds: float | None = None) -> None:
+    """
+    Mark a provider in cooldown to skip network calls during rate-limit bursts in 0ms.
+    Marks both the full label and its root identifier so all related endpoints skip immediately.
+    """
+    if cooldown_seconds is None:
+        cooldown_seconds = float(_ROUTING_CONFIG.get("settings", {}).get("default_cooldown_seconds", 60.0))
+
+    expiry_time = time.time() + cooldown_seconds
+    _COOLDOWNS[provider_name] = expiry_time
+
+    # Also mark short base identifier (e.g. 'Groq' for 'Groq GPT-OSS 120B')
+    base_id = provider_name.split()[0].capitalize()
+    _COOLDOWNS[base_id] = expiry_time
+
+    expiry_str = time.strftime("%H:%M:%S", time.localtime(expiry_time))
     logger.warning(
-        "[LLMProvider] %s entered 429 cooldown for %.1fs (will skip in 0ms until %s)",
+        "[LLMProvider] %s entered 429 cooldown for %.1fs (all subsequent queries will skip in 0ms until %s)",
         provider_name,
         cooldown_seconds,
-        expiry,
+        expiry_str,
     )
 
 
@@ -85,9 +111,17 @@ def get_cooldown_status() -> dict[str, float]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _openai_client(api_key: str, base_url: str):
+def _openai_client(api_key: str, base_url: str, timeout: float | None = None):
+    """
+    Create AsyncOpenAI client with max_retries=0.
+    CRITICAL: max_retries=0 prevents the client from sleeping for 30-40 seconds
+    when the upstream provider returns 429 with a 'Retry-After' header.
+    Instead, it raises immediately so KnowVex can failover in <100ms.
+    """
     from openai import AsyncOpenAI
-    return AsyncOpenAI(api_key=api_key, base_url=base_url)
+    if timeout is None:
+        timeout = float(_ROUTING_CONFIG.get("settings", {}).get("default_timeout_seconds", 12.0))
+    return AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0, timeout=timeout)
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -667,6 +701,16 @@ class LLMProvider:
                 yield chunk.content
             return
 
+        # 0ms Cooldown Skip: if active provider is in rate-limit cooldown, do NOT make a network call!
+        # Hop immediately to the fallback cascade in 0ms without adding latency.
+        if not is_healthy(self.provider):
+            logger.warning(
+                "[LLMProvider] %s is in 429 cooldown. Skipping network call in 0ms directly to fallback cascade.",
+                self.provider,
+            )
+            yield await self.invoke(messages, task="general")
+            return
+
         if self._client is None:
             yield await self.invoke(messages)
             return
@@ -681,8 +725,11 @@ class LLMProvider:
                 yield chunk.choices[0].delta.content or ""
         except Exception as exc:
             if _is_rate_limit(exc):
-                mark_rate_limited(self.provider.capitalize(), 60.0)
-                logger.warning("[LLMProvider] Stream hit 429 on %s, invoking fallback cascade...", self.provider)
+                mark_rate_limited(self.provider)
+                logger.warning(
+                    "[LLMProvider] Stream hit 429 on %s, instantly failing over to next healthy provider in 0ms...",
+                    self.provider,
+                )
                 yield await self.invoke(messages, task="general")
             else:
                 raise

@@ -133,25 +133,22 @@ export default function Sidebar({
   }, [data]);
 
   // Flattened reverse chronological list: NO date headers (ChatGPT style)
-  // Optimistically prepends new sessions created in store before backend refetch
+  // Deduplicates by session_id while preserving backend/optimistic recency order
   const sessionsList = useMemo(() => {
-    const fetchedIds = new Set(fetchedSessions.map((s) => s.session_id));
-    const optimistic = conversations
-      .filter((c) => c.id && !fetchedIds.has(c.id))
-      .map((c) => ({
-        id: c.id,
-        title: c.title || "New Chat",
-      }));
+    const seen = new Set<string>();
+    const result: Array<{ id: string; title: string }> = [];
 
-    const fetched = fetchedSessions.map((s) => {
+    for (const s of fetchedSessions) {
+      if (!s.session_id || seen.has(s.session_id)) continue;
+      seen.add(s.session_id);
       const storeMatch = conversations.find((c) => c.id === s.session_id);
-      return {
+      result.push({
         id: s.session_id,
         title: storeMatch?.title || s.title || "New Chat",
-      };
-    });
+      });
+    }
 
-    return [...optimistic, ...fetched];
+    return result;
   }, [fetchedSessions, conversations]);
 
   // Infinite scroll trigger via IntersectionObserver

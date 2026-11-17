@@ -1,5 +1,5 @@
 """Session Service — Postgres Chat history storage."""
-from sqlalchemy import select
+from sqlalchemy import select, update
 from backend.db.base import AsyncSession
 from backend.models.models import Session, Message, SessionDocument, Document
 from backend.models.schemas import (
@@ -15,7 +15,7 @@ from backend.models.schemas import (
 )
 from backend.core.config import settings
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, UTC
 
 class SessionService:
     """Manage chat sessions and history."""
@@ -69,6 +69,11 @@ class SessionService:
             citations = {"sources": sources or []},
         )
         db.add(mess)
+        await db.execute(
+            update(Session)
+            .where(Session.id == session_id)
+            .values(updated_at=datetime.now(UTC))
+        )
         await db.commit()
         await db.refresh(mess)
 

@@ -3,7 +3,7 @@
   "settings": {
     "default_cooldown_seconds": 60.0,
     "max_retries": 1,
-    "default_timeout_seconds": 15.0,
+    "default_timeout_seconds": 10.0,
     "enable_telemetry": true
   },
   "chains": {
@@ -16,12 +16,12 @@
     ],
     "rag_and_research": [
       { "id": "gemini_flash", "label": "Gemini Flash", "enabled": true },
+      { "id": "groq_120b", "label": "Groq GPT-OSS 120B", "enabled": true },
       { "id": "cohere_r", "label": "Cohere R+", "enabled": true },
+      { "id": "groq_qwen27b", "label": "Groq Qwen 27B", "enabled": true },
       { "id": "gonka_deepseek", "label": "Gonka DeepSeek", "enabled": true },
       { "id": "gonka_minimax", "label": "Gonka MiniMax", "enabled": true },
       { "id": "gonka_glm", "label": "Gonka GLM", "enabled": true },
-      { "id": "groq_120b", "label": "Groq GPT-OSS 120B", "enabled": true },
-      { "id": "groq_qwen27b", "label": "Groq Qwen 27B", "enabled": true },
       { "id": "kilo_free", "label": "Kilo Free", "enabled": true },
       { "id": "nvidia_nim", "label": "Nvidia NIM", "enabled": true },
       { "id": "ollama", "label": "Ollama", "enabled": true }

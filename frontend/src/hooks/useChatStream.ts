@@ -164,18 +164,35 @@ export function useChatStream({
     const botMsgId = `msg-${Date.now() + 1}`;
     const abortController = new AbortController();
 
-    // Bump conversation timestamp in recents list
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === finalConvId) {
-          return {
-            ...conv,
-            timestamp: new Date().toISOString(),
-          };
-        }
-        return conv;
-      })
-    );
+    const nowIso = new Date().toISOString();
+
+    // Bump active conversation to top of Zustand conversations list
+    setConversations((prev) => {
+      const existing = prev.find((c) => c.id === finalConvId);
+      const bumped: Conversation = existing
+        ? { ...existing, timestamp: nowIso }
+        : { id: finalConvId, title: targetTitle, timestamp: nowIso, messages: [] };
+      return [bumped, ...prev.filter((c) => c.id !== finalConvId)];
+    });
+
+    // Optimistically bump/prepend this session to index 0 of sidebar-sessions infinite cache
+    queryClient.setQueryData(["sidebar-sessions"], (old: any) => {
+      if (!old?.pages || old.pages.length === 0) return old;
+      const bumpedItem = {
+        session_id: finalConvId,
+        title: targetTitle,
+        updated_at: nowIso,
+      };
+      const cleanedPages = old.pages.map((page: any) => ({
+        ...page,
+        sessions: (page.sessions || []).filter((s: any) => s.session_id !== finalConvId),
+      }));
+      cleanedPages[0] = {
+        ...cleanedPages[0],
+        sessions: [bumpedItem, ...(cleanedPages[0].sessions || [])],
+      };
+      return { ...old, pages: cleanedPages };
+    });
 
     // Register active stream in global store registry
     setSessionStream(finalConvId, {

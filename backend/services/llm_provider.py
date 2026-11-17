@@ -111,22 +111,55 @@ def get_cooldown_status() -> dict[str, float]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _get_timeout_config(timeout: float | None = None):
+    """Return an httpx.Timeout with fast connect failure (4s) and bounded read timeout."""
+    import httpx
+    read_timeout = float(
+        timeout
+        if timeout is not None
+        else _ROUTING_CONFIG.get("settings", {}).get("default_timeout_seconds", 10.0)
+    )
+    return httpx.Timeout(read_timeout, connect=min(4.0, read_timeout))
+
+
 def _openai_client(api_key: str, base_url: str, timeout: float | None = None):
     """
-    Create AsyncOpenAI client with max_retries=0.
+    Create AsyncOpenAI client with max_retries=0 and fast connect timeout.
     CRITICAL: max_retries=0 prevents the client from sleeping for 30-40 seconds
     when the upstream provider returns 429 with a 'Retry-After' header.
     Instead, it raises immediately so KnowVex can failover in <100ms.
     """
     from openai import AsyncOpenAI
-    if timeout is None:
-        timeout = float(_ROUTING_CONFIG.get("settings", {}).get("default_timeout_seconds", 12.0))
-    return AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0, timeout=timeout)
+    return AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        max_retries=0,
+        timeout=_get_timeout_config(timeout),
+    )
 
 
 def _is_rate_limit(exc: Exception) -> bool:
     s = str(exc).lower()
     return "429" in s or "rate limit" in s or "too many requests" in s or "quota" in s or "504" in s or "resource_exhausted" in s
+
+
+def _is_timeout_or_connection_error(exc: Exception) -> bool:
+    cls_name = type(exc).__name__.lower()
+    s = str(exc).lower()
+    return (
+        "timeout" in cls_name
+        or "connect" in cls_name
+        or "timed out" in s
+        or "connection" in s
+        or "502" in s
+        or "503" in s
+        or "504" in s
+    )
+
+
+def _format_exc(exc: Exception) -> str:
+    msg = str(exc).strip()
+    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +261,7 @@ async def _try_gemini(messages: list[dict]) -> str:
         })
     model = _get_model_slug("gemini_flash", "gemini-flash-lite-latest")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=_get_timeout_config()) as client:
         resp = await client.post(url, json={"contents": gemini_contents})
         if resp.status_code != 200:
             raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text}")
@@ -261,7 +294,7 @@ async def _try_cohere(messages: list[dict]) -> str:
         "model": model,
         "messages": cohere_messages,
     }
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=_get_timeout_config()) as client:
         resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code != 200:
             raise RuntimeError(f"Cohere API error {resp.status_code}: {resp.text}")
@@ -619,7 +652,7 @@ class LLMProvider:
                 logger.debug("[LLMProvider] Skipping %s in 0ms (429 cooldown active)", label)
                 continue
 
-            max_retries = 2 if "Secondary" in label or "Cohere" in label else 1
+            max_retries = 1
             for attempt in range(1, max_retries + 1):
                 try:
                     result = await fn(messages)
@@ -644,21 +677,31 @@ class LLMProvider:
                 except Exception as exc:
                     last_exc = exc
                     failover_count += 1
+                    err_summary = _format_exc(exc)
 
                     if _is_rate_limit(exc):
-                        # Mark 429 cooldown for 60 seconds
                         mark_rate_limited(label, 60.0)
                         logger.warning(
-                            "[LLMProvider] %s hit 429 rate limit; marked in 60s cooldown. Failing over instantly.",
-                            label
+                            "[LLMProvider] %s hit 429 rate limit (%s); marked in 60s cooldown. Failing over instantly.",
+                            label,
+                            err_summary,
                         )
                         break  # Immediately hop to next provider!
+
+                    if _is_timeout_or_connection_error(exc):
+                        mark_rate_limited(label, 60.0)
+                        logger.warning(
+                            "[LLMProvider] %s timed out / unreachable (%s); marked in 60s cooldown so sibling endpoints skip in 0ms.",
+                            label,
+                            err_summary,
+                        )
+                        break
 
                     if attempt < max_retries:
                         await asyncio.sleep(1)
                         continue
 
-                    logger.warning("[LLMProvider] %s failed (%s), trying next provider in %s chain.", label, exc, task)
+                    logger.warning("[LLMProvider] %s failed (%s), trying next provider in %s chain.", label, err_summary, task)
                     break
 
         raise RuntimeError(

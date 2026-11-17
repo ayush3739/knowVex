@@ -44,6 +44,7 @@ export default function Sidebar({
   const activeConvId = useStore((s) => s.activeConvId);
   const setActiveConvId = useStore((s) => s.setActiveConvId);
   const conversations = useStore((s) => s.conversations);
+  const streamingSessions = useStore((s) => s.streamingSessions);
 
   const logout = () => {
     api.logout();
@@ -361,9 +362,11 @@ export default function Sidebar({
                 title="Chats (Click to expand)"
               >
                 <MessageSquare className="w-4 h-4" />
-                {conversationsCount > 0 && (
+                {Object.keys(streamingSessions).length > 0 ? (
+                  <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-primary animate-ping" title="Response generating..." />
+                ) : conversationsCount > 0 ? (
                   <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-                )}
+                ) : null}
               </button>
               <button
                 type="button"
@@ -519,6 +522,8 @@ export default function Sidebar({
                         );
                       }
 
+                      const isStreaming = Boolean(streamingSessions[session.id]);
+
                       return (
                         <div
                           key={session.id}
@@ -533,6 +538,14 @@ export default function Sidebar({
                           <span className="truncate flex-1 min-w-0 text-left pr-1" title={session.title}>
                             {session.title}
                           </span>
+
+                          {/* Glowing animated ping dot if generating in background or active (Decision 2 - Option A) */}
+                          {isStreaming && (
+                            <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                            </span>
+                          )}
 
                           {/* Hover Three-Dots Menu (ChatGPT style) */}
                           <div

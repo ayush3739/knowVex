@@ -1,8 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { SourceDocument, Conversation, ModelParams, DocType, UserQuota } from '../types';
+import { SourceDocument, Conversation, ModelParams, DocType, UserQuota, Message, Citation } from '../types';
 
 export type AuthMode = 'login' | 'register' | 'forgot-password' | 'verification-sent' | 'forgot-password-sent';
+
+export interface SessionStreamState {
+  sessionId: string;
+  botMsgId: string;
+  userMessage: Message;
+  currentText: string;
+  graphStatuses: any[];
+  citations: Citation[];
+  chunks?: any;
+  finalMessageId?: number;
+  sessionTitle: string;
+  startedAt: string;
+  abortController?: AbortController;
+}
 
 interface UserData {
   id?: number;
@@ -21,6 +35,7 @@ interface AppState {
   activeConvId: string | null;
   params: ModelParams;
   isProcessing: boolean;
+  streamingSessions: Record<string, SessionStreamState>;
   activeDocumentId: string | null;
 
   setCurrentTab: (tab: string) => void;
@@ -31,6 +46,11 @@ interface AppState {
   setActiveConvId: (id: string | null) => void;
   setParams: (params: Partial<ModelParams>) => void;
   setIsProcessing: (isProcessing: boolean) => void;
+  setSessionStream: (sessionId: string, stream: SessionStreamState | null) => void;
+  updateSessionStream: (
+    sessionId: string,
+    updater: (prev: SessionStreamState) => SessionStreamState
+  ) => void;
   toggleDocumentActive: (id: string) => void;
 
   isAuthenticated: boolean;
@@ -88,6 +108,7 @@ export const useStore = create<AppState>()(
         documents: [],
         conversations: [],
         isProcessing: false,
+        streamingSessions: {},
         isMobileSidebarOpen: false,
         currentTab: 'dashboard',
       }),
@@ -105,6 +126,7 @@ export const useStore = create<AppState>()(
         selectedModel: "gemini-3.5-flash",
       },
       isProcessing: false,
+      streamingSessions: {},
 
       setCurrentTab: (tab) => set({ currentTab: tab }),
       setIsMobileSidebarOpen: (isOpen) => set({ isMobileSidebarOpen: isOpen }),
@@ -115,9 +137,36 @@ export const useStore = create<AppState>()(
       setConversations: (convsOrUpdater) => set((state) => ({
         conversations: typeof convsOrUpdater === 'function' ? convsOrUpdater(state.conversations) : convsOrUpdater
       })),
-      setActiveConvId: (id) => set({ activeConvId: id }),
+      setActiveConvId: (id) => set((state) => ({
+        activeConvId: id,
+        isProcessing: Boolean(id && state.streamingSessions[id]),
+      })),
       setParams: (newParams) => set((state) => ({ params: { ...state.params, ...newParams } })),
       setIsProcessing: (isProcessing) => set({ isProcessing }),
+      setSessionStream: (sessionId, stream) =>
+        set((state) => {
+          const next = { ...state.streamingSessions };
+          if (stream) {
+            next[sessionId] = stream;
+          } else {
+            delete next[sessionId];
+          }
+          return {
+            streamingSessions: next,
+            isProcessing: Boolean(state.activeConvId && next[state.activeConvId]),
+          };
+        }),
+      updateSessionStream: (sessionId, updater) =>
+        set((state) => {
+          const existing = state.streamingSessions[sessionId];
+          if (!existing) return state;
+          const updated = updater(existing);
+          const next = { ...state.streamingSessions, [sessionId]: updated };
+          return {
+            streamingSessions: next,
+            isProcessing: Boolean(state.activeConvId && next[state.activeConvId]),
+          };
+        }),
       toggleDocumentActive: (id) => set((state) => ({
         documents: state.documents.map(doc => doc.id === id ? { ...doc, active: !doc.active } : doc)
       })),

@@ -34,11 +34,18 @@ async def create_session(
 
 @router.get("/", response_model=SessionList)
 async def list_sessions(
+    limit: int | None = None,
+    offset: int | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all sessions for the current user."""
-    return await _session_service.list_sessions(user_id=current_user.id, db=db)
+    """List all sessions for the current user in recent order with optional pagination."""
+    return await _session_service.list_sessions(
+        user_id=current_user.id,
+        db=db,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{session_id}/history", response_model=MessageList)

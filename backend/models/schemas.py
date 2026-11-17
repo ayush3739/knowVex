@@ -97,6 +97,8 @@ class SessionItem(BaseModel):
 
 class SessionList(BaseModel):
     sessions: list[SessionItem]
+    has_more: Optional[bool] = None
+    total: Optional[int] = None
 
 class SessionDocumentList(BaseModel):
     document_ids : list[int]

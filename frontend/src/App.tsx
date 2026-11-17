@@ -468,6 +468,9 @@ export default function App() {
       setIsMobileSidebarOpen={setIsMobileSidebarOpen}
       onNewResearch={handleNewResearch}
       conversationsCount={conversations.length}
+      onSelectSession={handleSelectSession}
+      onDeleteSession={handleDeleteSession}
+      onRenameSession={handleRenameSession}
     >
       <AppWorkspace
         currentTab={currentTab}

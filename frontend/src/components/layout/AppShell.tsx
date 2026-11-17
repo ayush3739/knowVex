@@ -12,6 +12,9 @@ interface AppShellProps {
   setIsMobileSidebarOpen: (open: boolean) => void;
   onNewResearch: () => void;
   conversationsCount: number;
+  onSelectSession?: (id: string) => void;
+  onDeleteSession?: (id: string) => void;
+  onRenameSession?: (id: string, newName: string) => void;
   children: React.ReactNode;
 }
 
@@ -22,6 +25,9 @@ export function AppShell({
   setIsMobileSidebarOpen,
   onNewResearch,
   conversationsCount,
+  onSelectSession,
+  onDeleteSession,
+  onRenameSession,
   children,
 }: AppShellProps) {
   const theme = useStore((s) => s.theme);
@@ -88,6 +94,9 @@ export function AppShell({
           }}
           onNewResearch={onNewResearch}
           conversationsCount={conversationsCount}
+          onSelectSession={onSelectSession}
+          onDeleteSession={onDeleteSession}
+          onRenameSession={onRenameSession}
         />
       </div>
 

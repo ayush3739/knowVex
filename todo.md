@@ -66,6 +66,11 @@
 - [ ] **4.3 Dynamic Client-Side Model Selection (F5.1)**:
   - Add `model` / `llm_mode` field to `ChatRequest` in [`backend/models/schemas.py`](file:///c:/Users/Ayush%20Maurya/Desktop/hexon/rag-qa/backend/models/schemas.py).
   - Wire the model selector in `ChatWorkspace.tsx` and `SettingsView.tsx` to send the requested provider with each chat message instead of relying on local browser storage alone.
+- [x] **4.4 ChatGPT-Style Sidebar Recents with Infinite Scroll**:
+  - Render a clean, chronological list of recent chats directly in the sidebar without date group headers.
+  - Paginated infinite scroll loading 10 chats per batch via an IntersectionObserver sentinel.
+  - Hover action menu (three-dots `...`) for renaming and deleting sessions.
+  - Active session styling and instant prepend for newly initiated chats.
 
 ---
 
@@ -109,6 +114,25 @@
   - Scan retrieved document chunks for indirect prompt injection payloads before sending to the synthesis prompt.
 - [ ] **7.5 Output Groundedness Check (F6.4)**:
   - Fast inline groundedness heuristic at request time emitting `grounded: boolean` in SSE metadata.
+
+---
+
+## ⚡ 8. Redis Unified Infrastructure, Rate Limiting & Worker Queues
+
+- [ ] **8.1 Single Redis Instance Architecture Setup**:
+  - Provision single Redis instance architecture for KnowVex (`REDIS_URL` in `.env` / `backend/core/config.py`).
+  - Create centralized async Redis connection pool (`backend/core/redis.py`) with automatic reconnection and graceful fallback when Redis is unreachable.
+- [ ] **8.2 API Rate Limiting with `slowapi` + Redis Backend**:
+  - Implement distributed rate limiting across all API endpoints using `slowapi` with Redis key convention `rate:{ip/user}:{endpoint}`.
+  - Enforce tiered limits: Free tier vs Pro tier on chat streaming, document upload, and auth routes.
+- [ ] **8.3 Background Ingestion Worker Queue (Native Redis LPUSH / BRPOP)**:
+  - Replace volatile in-memory `_INDEX_JOBS` dictionary in [`backend/api/routes/documents.py`](file:///c:/Users/Ayush%20Maurya/Desktop/hexon/rag-qa/backend/api/routes/documents.py) with a resilient Redis list queue (`queue:document_ingestion`).
+  - Producers push job payloads (`LPUSH`), dedicated ingestion worker consumes jobs via blocking pop (`BRPOP`).
+  - Persist job statuses (`queued`, `indexing`, `indexed`, `failed`, chunk counts, error details) in Redis hashes (`job:doc:{job_id}`) with TTL, supporting reliable polling at `GET /api/v1/documents/status/{job_id}`.
+- [ ] **8.4 RAG & Direct Query Caching with Smart Invalidation**:
+  - Cache synthesized answers and retrieval results in Redis using key convention `cache:rag:{docs_hash}:{query_hash}`.
+  - Support configurable TTL (e.g. 24h default) with direct cache hits bypassing LangGraph/LLM roundtrips.
+  - Automatic cache invalidation: purge all matching `cache:rag:{docs_hash}:*` keys when any associated document is deleted or modified.
 
 ---
 

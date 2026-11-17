@@ -105,6 +105,8 @@ export function useChatStream({
         lastLoadedConvIdRef.current = targetConvId;
 
         await api.renameSession(targetConvId, title);
+        queryClient.invalidateQueries({ queryKey: ["sidebar-sessions"] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
 
         const linkedDraftDocIds = [...draftLinkedDocIds];
         for (const docId of linkedDraftDocIds) {
@@ -334,6 +336,7 @@ export function useChatStream({
       return sessionId;
     },
     onSuccess: (newSessionId) => {
+      queryClient.invalidateQueries({ queryKey: ["sidebar-sessions"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       setActiveConvId(newSessionId);
     },
@@ -380,6 +383,10 @@ export function useChatStream({
     mutationFn: async (id: string) => {
       await api.deleteSession(id);
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sidebar-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
   });
 
   const handleDeleteSession = (id: string) => {
@@ -390,6 +397,10 @@ export function useChatStream({
   const renameSessionMutation = useMutation({
     mutationFn: async ({ id, newName }: { id: string; newName: string }) => {
       await api.renameSession(id, newName);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sidebar-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
   });
 

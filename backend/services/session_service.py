@@ -142,19 +142,40 @@ class SessionService:
             ]
         )
     
-    async def list_sessions(self, user_id: int, db: AsyncSession) -> SessionList:
-        """List all sessions for a user."""
-        result = await db.execute(
+    async def list_sessions(
+        self,
+        user_id: int,
+        db: AsyncSession,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> SessionList:
+        """List all sessions for a user ordered by most recent, with optional pagination."""
+        query = (
             select(Session)
             .where(Session.user_id == user_id)
             .order_by(Session.updated_at.desc())
         )
 
-        sessions = result.scalars().all()
-        return SessionList(sessions=[
-            SessionItem(session_id=s.id, title=s.title, updated_at=s.updated_at) 
-            for s in sessions
-        ])    
+        if offset is not None and offset > 0:
+            query = query.offset(offset)
+        if limit is not None and limit > 0:
+            query = query.limit(limit + 1)
+
+        result = await db.execute(query)
+        sessions = list(result.scalars().all())
+
+        has_more = False
+        if limit is not None and limit > 0 and len(sessions) > limit:
+            has_more = True
+            sessions = sessions[:limit]
+
+        return SessionList(
+            sessions=[
+                SessionItem(session_id=s.id, title=s.title, updated_at=s.updated_at) 
+                for s in sessions
+            ],
+            has_more=has_more
+        )    
     
     async def get_session_documents(self, session_id: UUID, db: AsyncSession) -> list[int]:
         result = await db.execute(

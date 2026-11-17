@@ -278,7 +278,13 @@ export const api = {
   getDocumentStatus: (jobId: string) => apiFetch(`/documents/status/${jobId}`),
 
   // Sessions
-  getSessions: () => apiFetch('/sessions/'),
+  getSessions: (limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.append('limit', String(limit));
+    if (offset !== undefined) params.append('offset', String(offset));
+    const qs = params.toString();
+    return apiFetch(`/sessions/${qs ? `?${qs}` : ''}`);
+  },
   
   createSession: () => apiFetch('/sessions/', { method: 'POST' }),
 

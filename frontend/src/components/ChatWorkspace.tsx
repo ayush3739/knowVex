@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import FeedbackDialog from "./FeedbackDialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import PromptInput from "./PromptInput";
+import { useStore } from "../store/useStore";
 
 const EMPTY_DOCS: SourceDocument[] = [];
 const STARTING_GRAPH_STATUS = [{ node: "main_router", label: "Deciding route", status: "running" }];
@@ -148,6 +150,7 @@ export default function ChatWorkspace({
   graphStatuses = [],
 }: ChatWorkspaceProps) {
   const [inputText, setInputText] = useState("");
+  const [promptAttachments, setPromptAttachments] = useState<SourceDocument[]>([]);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [chatMode, setChatMode] = useState<"auto" | "research">("auto");
@@ -223,6 +226,7 @@ export default function ChatWorkspace({
     if (!inputText.trim() || isProcessing) return;
     onSendMessage(inputText.trim(), chatMode);
     setInputText("");
+    setPromptAttachments([]);
   };
 
   const fallbackCopyText = (id: string, text: string) => {
@@ -306,28 +310,55 @@ export default function ChatWorkspace({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleDirectAttachFile = (file: File) => {
     if (file.size === 0) {
       toast.error(`Upload failed: File ${file.name} is empty.`);
-      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     if (file.size > 30 * 1024 * 1024) {
       toast.error(`Upload failed: File size for ${file.name} exceeds the 30 MB limit.`);
-      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     const allowed = ['.pdf', '.txt', '.md', '.docx'];
     if (file.name.includes('.') && !allowed.includes(ext)) {
       toast.error(`Upload failed: Unsupported file extension '${ext}'. Allowed extensions: ${allowed.join(', ')}`);
-      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     onAddDocument(file);
+    const tempAttachment: SourceDocument = {
+      id: `prompt-attach-${Date.now()}-${file.name}`,
+      name: file.name,
+      size: `${(file.size / 1024).toFixed(0)} KB`,
+      type: ext === '.csv' || ext === '.xlsx' ? 'spreadsheet' : 'pdf',
+      chunks: 0,
+      active: true,
+    };
+    setPromptAttachments((prev) => [...prev, tempAttachment]);
+  };
+
+  const handleRemovePromptAttachment = (docId: string) => {
+    // Only dismisses the chip from the current prompt input
+    // Does NOT delete or unlink the document from the session document list
+    setPromptAttachments((prev) => prev.filter((d) => d.id !== docId));
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleDirectAttachFile(file);
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleStop = () => {
+    if (activeConvId) {
+      const stream = useStore.getState().streamingSessions[activeConvId];
+      if (stream?.abortController) {
+        stream.abortController.abort();
+      }
+      useStore.getState().setSessionStream(activeConvId, null);
+    }
   };
 
   return (
@@ -760,75 +791,21 @@ export default function ChatWorkspace({
             "w-full relative z-10",
             isInspectorOpen ? "max-w-3xl" : "max-w-4xl"
           )}>
-            <form 
-              onSubmit={handleSubmit} 
-              className="w-full bg-surface-container-lowest border border-border rounded-xl p-2.5 flex flex-col transition-colors duration-150 shadow-sm focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
-            >
-              <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full max-h-36 min-h-[52px] resize-none overflow-y-auto overflow-x-hidden bg-transparent border-none px-3.5 pt-2 text-sm font-medium text-foreground placeholder:text-muted-foreground outline-none focus:outline-none focus:ring-0"
-                placeholder="Ask anything or research your documents…"
-                rows={1}
-              />
-            
-              <div className="flex items-center justify-between px-2 pb-1 pt-1.5 border-t border-border/40 mt-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="hidden sm:inline">Press</span>
-                  <kbd className="text-[10px] font-sans font-medium text-muted-foreground border border-border px-1.5 py-0.5 rounded bg-surface">Enter</kbd>
-                  <span className="hidden sm:inline">to send</span>
-                </div>
-              
-                <div className="flex items-center gap-2.5">
-                  {/* Segmented Mode Selector */}
-                  <div className="flex items-center bg-surface-container border border-border rounded-lg p-0.5 text-xs select-none gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setChatMode("auto")}
-                      className={cn(
-                        "px-2.5 py-1 rounded-md transition-colors duration-150 cursor-pointer font-medium flex items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 active:scale-95 disabled:opacity-50 disabled:pointer-events-none motion-reduce:transform-none",
-                        chatMode === "auto"
-                          ? "bg-surface-container-lowest text-foreground border-border shadow-xs font-semibold border"
-                          : "text-muted-foreground hover:text-foreground hover:bg-surface border border-transparent"
-                      )}
-                      title="Auto: Dynamic tool routing (Direct, Documents, Web)"
-                    >
-                      Auto
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChatMode("research")}
-                      className={cn(
-                        "px-2.5 py-1 rounded-md transition-colors duration-150 cursor-pointer font-medium flex items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 active:scale-95 disabled:opacity-50 disabled:pointer-events-none motion-reduce:transform-none",
-                        chatMode === "research"
-                          ? "bg-surface-container-lowest text-foreground border-border shadow-xs font-semibold border"
-                          : "text-muted-foreground hover:text-foreground hover:bg-surface border border-transparent"
-                      )}
-                      title="Research: Multi-step evidence synthesis & deep research"
-                    >
-                      Research
-                    </button>
-                  </div>
-
-                  {/* Send Button */}
-                  <button
-                    type="submit"
-                    disabled={!inputText.trim() || isProcessing}
-                    className={cn(
-                      "p-1.5 rounded-lg transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:scale-95 disabled:opacity-40 disabled:pointer-events-none motion-reduce:transform-none",
-                      !inputText.trim() || isProcessing 
-                        ? "text-muted-foreground cursor-not-allowed" 
-                        : "text-primary border border-primary/30 hover:bg-primary/10 cursor-pointer"
-                    )}
-                    title="Send message"
-                    aria-label="Send message"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </form>
+            <PromptInput
+              value={inputText}
+              onChange={setInputText}
+              onSubmit={handleSubmit}
+              isProcessing={isProcessing}
+              onStop={handleStop}
+              chatMode={chatMode}
+              onChatModeChange={setChatMode}
+              onAttachFile={handleDirectAttachFile}
+              attachedDocuments={promptAttachments}
+              onRemoveAttachment={handleRemovePromptAttachment}
+              placeholder="Ask anything or research your documents…"
+              minHeight={46}
+              maxHeight={180}
+            />
           </div>
         </div>
       </div>

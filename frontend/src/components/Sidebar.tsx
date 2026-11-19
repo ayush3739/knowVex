@@ -3,7 +3,7 @@ import {
   Database, Plus, FolderOpen, MessageSquare, 
   LayoutDashboard, Settings, LogOut, Sun, Moon, PanelLeftClose, PanelLeftOpen,
   Sparkles, Crown, Clock, CreditCard, ShieldCheck, Zap,
-  MoreHorizontal, Pencil, Trash2, Check, X, Loader2
+  MoreHorizontal, Pencil, Trash2, Check, X, Loader2, Pin, PinOff, Search
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,6 +63,37 @@ export default function Sidebar({
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // Pinned chat IDs stored in localStorage
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("knowvex_pinned_sessions") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const togglePin = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setPinnedIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
+      try {
+        localStorage.setItem("knowvex_pinned_sessions", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Search filter query & visibility (ChatGPT style)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isSearchOpen]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
     let isMounted = true;
@@ -110,16 +141,25 @@ export default function Sidebar({
   } = useInfiniteQuery({
     queryKey: ["sidebar-sessions"],
     queryFn: async ({ pageParam = 0 }) => {
-      const res = await api.getSessions(PAGE_SIZE, pageParam);
-      return {
-        sessions: (res.sessions || []) as Array<{
+      try {
+        const res = await api.getSessions(PAGE_SIZE, pageParam);
+        const list = (res?.sessions || []) as Array<{
           session_id: string;
           title: string;
           updated_at?: string;
-        }>,
-        hasMore: Boolean(res.has_more),
-        nextOffset: pageParam + (res.sessions?.length || 0),
-      };
+        }>;
+        return {
+          sessions: list,
+          hasMore: Boolean(res?.has_more),
+          nextOffset: pageParam + list.length,
+        };
+      } catch (err) {
+        return {
+          sessions: [],
+          hasMore: false,
+          nextOffset: pageParam,
+        };
+      }
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextOffset : undefined),
@@ -133,11 +173,12 @@ export default function Sidebar({
   }, [data]);
 
   // Flattened reverse chronological list: NO date headers (ChatGPT style)
-  // Deduplicates by session_id while preserving backend/optimistic recency order
+  // Deduplicates by session_id while ensuring all store/backend sessions are always visible
   const sessionsList = useMemo(() => {
     const seen = new Set<string>();
     const result: Array<{ id: string; title: string }> = [];
 
+    // 1. Include fetched sessions from backend paginated query
     for (const s of fetchedSessions) {
       if (!s.session_id || seen.has(s.session_id)) continue;
       seen.add(s.session_id);
@@ -148,8 +189,34 @@ export default function Sidebar({
       });
     }
 
+    // 2. Fallback to conversations in Zustand store (loaded by App.tsx or newly created)
+    for (const c of conversations) {
+      if (!c.id || seen.has(c.id)) continue;
+      seen.add(c.id);
+      result.push({
+        id: c.id,
+        title: c.title || "New Chat",
+      });
+    }
+
     return result;
   }, [fetchedSessions, conversations]);
+
+  // Real-time search filter (ChatGPT style)
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery.trim()) return sessionsList;
+    const q = searchQuery.toLowerCase();
+    return sessionsList.filter((s) => s.title.toLowerCase().includes(q));
+  }, [sessionsList, searchQuery]);
+
+  // Partition into Pinned chats and Recent chats
+  const pinnedSessions = useMemo(() => {
+    return filteredSessions.filter((s) => pinnedIds.includes(s.id));
+  }, [filteredSessions, pinnedIds]);
+
+  const recentSessions = useMemo(() => {
+    return filteredSessions.filter((s) => !pinnedIds.includes(s.id));
+  }, [filteredSessions, pinnedIds]);
 
   // Infinite scroll trigger via IntersectionObserver
   useEffect(() => {
@@ -295,6 +362,21 @@ export default function Sidebar({
                     KnowVex
                   </h1>
                 </div>
+                {/* Search Toggle Button (ChatGPT style) */}
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen((prev) => !prev)}
+                  className={cn(
+                    "rounded-md p-1.5 transition-colors duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                    isSearchOpen
+                      ? "bg-surface-container-high text-foreground"
+                      : "text-muted-foreground hover:bg-surface-container-high hover:text-foreground"
+                  )}
+                  title="Search chats"
+                  aria-label="Search chats"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsCollapsed(true)}
@@ -307,6 +389,38 @@ export default function Sidebar({
               </>
             )}
           </div>
+
+          {/* Quick Chat Search Input (ChatGPT style) */}
+          {!isCollapsed && isSearchOpen && (
+            <div className="mb-2.5 px-0.5">
+              <div className="relative flex items-center bg-surface-container/70 border border-border/80 rounded-lg px-2.5 py-1.5 focus-within:border-primary/50 transition-colors">
+                <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0 mr-2" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setIsSearchOpen(false);
+                      setSearchQuery("");
+                    }
+                  }}
+                  placeholder="Search chats..."
+                  className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Primary CTA Button: New Chat */}
           <button
@@ -451,150 +565,322 @@ export default function Sidebar({
                 })}
               </nav>
 
-              {/* Recents Section (ChatGPT Style: Flat reverse chronological order with infinite scroll) */}
+              {/* Recents Section (ChatGPT Style: Clean flat order, Pinned section, inline search, and infinite scroll) */}
               <div className="flex-1 min-h-0 flex flex-col pt-2 border-t border-border/50">
-                <div className="flex items-center justify-between px-2 mb-1.5 shrink-0">
-                  <span className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-                    Recents
-                  </span>
-                  {isFetchingNextPage && (
-                    <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
-                  )}
-                </div>
-
                 {/* Scrollable Container with Infinite Scroll */}
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-0.5 pr-1 -mr-1">
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-2 pr-1 -mr-1">
                   {isLoading && sessionsList.length === 0 ? (
                     <div className="space-y-1.5 px-1 py-1">
                       {[...Array(5)].map((_, i) => (
-                        <div key={i} className="h-7 rounded-lg bg-surface-container/50 animate-pulse" />
+                        <div key={i} className="h-8 rounded-lg bg-surface-container/50 animate-pulse" />
                       ))}
                     </div>
-                  ) : sessionsList.length === 0 ? (
-                    <div className="px-2 py-6 text-center">
-                      <p className="text-xs text-muted-foreground/80 font-normal">No chats yet</p>
-                    </div>
                   ) : (
-                    sessionsList.map((session) => {
-                      const isActive =
-                        activeConvId === session.id &&
-                        (currentTab === "conversations" || currentTab === "chats");
-                      const isRenaming = editingSessionId === session.id;
-                      const isMenuOpen = activeMenuSessionId === session.id;
-
-                      if (isRenaming) {
-                        return (
-                          <div
-                            key={session.id}
-                            className="flex items-center space-x-1 px-2 py-1 bg-surface-container rounded-lg border border-border"
-                          >
-                            <input
-                              type="text"
-                              value={editingTitle}
-                              onChange={(e) => setEditingTitle(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSaveRename(session.id);
-                                if (e.key === "Escape") setEditingSessionId(null);
-                              }}
-                              autoFocus
-                              className="flex-1 min-w-0 bg-transparent text-xs text-foreground font-medium outline-none px-1 py-0.5 border-b border-primary"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveRename(session.id)}
-                              className="p-1 rounded hover:bg-surface-container-high text-success transition-colors cursor-pointer"
-                              title="Save"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingSessionId(null)}
-                              className="p-1 rounded hover:bg-surface-container-high text-muted-foreground transition-colors cursor-pointer"
-                              title="Cancel"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                    <>
+                      {/* Pinned Chats Section (when any chats are pinned) */}
+                      {pinnedSessions.length > 0 && (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center space-x-1.5 px-2 mb-1 text-[11px] font-semibold text-muted-foreground/70 tracking-tight">
+                            <Pin className="w-3 h-3 text-primary rotate-45" />
+                            <span>Pinned</span>
                           </div>
-                        );
-                      }
+                          {pinnedSessions.map((session) => {
+                            const isActive =
+                              activeConvId === session.id &&
+                              (currentTab === "conversations" || currentTab === "chats");
+                            const isRenaming = editingSessionId === session.id;
+                            const isMenuOpen = activeMenuSessionId === session.id;
+                            const isStreaming = Boolean(streamingSessions[session.id]);
 
-                      const isStreaming = Boolean(streamingSessions[session.id]);
+                            if (isRenaming) {
+                              return (
+                                <div
+                                  key={session.id}
+                                  className="flex items-center space-x-1 px-2.5 py-1 bg-surface-container rounded-lg border border-border"
+                                >
+                                  <input
+                                    type="text"
+                                    value={editingTitle}
+                                    onChange={(e) => setEditingTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleSaveRename(session.id);
+                                      if (e.key === "Escape") setEditingSessionId(null);
+                                    }}
+                                    autoFocus
+                                    className="flex-1 min-w-0 bg-transparent text-[13px] text-foreground font-medium outline-none px-1 py-0.5 border-b border-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveRename(session.id)}
+                                    className="p-1 rounded hover:bg-surface-container-high text-success transition-colors cursor-pointer"
+                                    title="Save"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSessionId(null)}
+                                    className="p-1 rounded hover:bg-surface-container-high text-muted-foreground transition-colors cursor-pointer"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            }
 
-                      return (
-                        <div
-                          key={session.id}
-                          onClick={() => handleSelectChat(session.id)}
-                          className={cn(
-                            "group relative flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors duration-150 cursor-pointer select-none",
-                            isActive
-                              ? "bg-surface-container-high text-foreground font-semibold shadow-xs"
-                              : "text-muted-foreground hover:text-foreground hover:bg-surface-container/60 font-medium"
-                          )}
-                        >
-                          <span className="truncate flex-1 min-w-0 text-left pr-1" title={session.title}>
-                            {session.title}
-                          </span>
-
-                          {/* Glowing animated ping dot if generating in background or active (Decision 2 - Option A) */}
-                          {isStreaming && (
-                            <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-                            </span>
-                          )}
-
-                          {/* Hover Three-Dots Menu (ChatGPT style) */}
-                          <div
-                            className="relative shrink-0 flex items-center"
-                            ref={isMenuOpen ? actionMenuRef : undefined}
-                          >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuSessionId(isMenuOpen ? null : session.id);
-                              }}
-                              className={cn(
-                                "p-1 rounded-md transition-opacity duration-150 text-muted-foreground hover:text-foreground hover:bg-surface-container-highest cursor-pointer",
-                                isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
-                              )}
-                              title="Chat options"
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Dropdown Menu */}
-                            {isMenuOpen && (
+                            return (
                               <div
-                                onClick={(e) => e.stopPropagation()}
-                                className="absolute right-0 top-full mt-1 w-32 bg-surface border border-border rounded-lg shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150"
+                                key={session.id}
+                                onClick={() => handleSelectChat(session.id)}
+                                className={cn(
+                                  "group relative flex items-center justify-between rounded-lg px-2.5 py-2 text-[13px] transition-colors duration-150 cursor-pointer select-none",
+                                  isActive
+                                    ? "bg-surface-container-high text-foreground font-medium shadow-xs"
+                                    : "text-muted-foreground/85 hover:text-foreground hover:bg-surface-container/60 font-normal"
+                                )}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartRename(session.id, session.title)}
-                                  className="w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-surface-container transition-colors cursor-pointer"
+                                <span className="truncate flex-1 min-w-0 text-left pr-2" title={session.title}>
+                                  {session.title}
+                                </span>
+
+                                {isStreaming && (
+                                  <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                                  </span>
+                                )}
+
+                                <div
+                                  className={cn(
+                                    "relative shrink-0 flex items-center space-x-0.5 transition-opacity duration-150",
+                                    isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                                  )}
+                                  ref={isMenuOpen ? actionMenuRef : undefined}
                                 >
-                                  <Pencil className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
-                                  Rename
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveMenuSessionId(null);
-                                    setSessionToDelete(session.id);
-                                  }}
-                                  className="w-full flex items-center px-2.5 py-1.5 text-xs text-danger hover:bg-danger-subtle transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 mr-2" />
-                                  Delete
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => togglePin(session.id, e)}
+                                    className="p-1 rounded-md text-primary hover:text-primary/80 hover:bg-surface-container-highest cursor-pointer transition-colors"
+                                    title="Unpin chat"
+                                  >
+                                    <Pin className="w-3.5 h-3.5 fill-current" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenuSessionId(isMenuOpen ? null : session.id);
+                                    }}
+                                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-container-highest cursor-pointer transition-colors"
+                                    title="Chat options"
+                                  >
+                                    <MoreHorizontal className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {isMenuOpen && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute right-0 top-full mt-1 w-36 bg-surface border border-border rounded-lg shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartRename(session.id, session.title)}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-surface-container transition-colors cursor-pointer"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                                        Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          togglePin(session.id, e);
+                                          setActiveMenuSessionId(null);
+                                        }}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-surface-container transition-colors cursor-pointer"
+                                      >
+                                        <PinOff className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                                        Unpin
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveMenuSessionId(null);
+                                          setSessionToDelete(session.id);
+                                        }}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-danger hover:bg-danger-subtle transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            )}
-                          </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })
+                      )}
+
+                      {/* Recents List Section */}
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between px-2 mb-1 text-[11px] font-semibold text-muted-foreground/70 tracking-tight">
+                          <span>
+                            {searchQuery ? `Search Results (${recentSessions.length + pinnedSessions.length})` : "Recents"}
+                          </span>
+                          {isFetchingNextPage && (
+                            <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
+                          )}
+                        </div>
+
+                        {recentSessions.length === 0 && pinnedSessions.length === 0 ? (
+                          <div className="px-2 py-6 text-center">
+                            <p className="text-xs text-muted-foreground/80 font-normal">
+                              {searchQuery ? "No matching chats found" : "No chats yet"}
+                            </p>
+                          </div>
+                        ) : (
+                          recentSessions.map((session) => {
+                            const isActive =
+                              activeConvId === session.id &&
+                              (currentTab === "conversations" || currentTab === "chats");
+                            const isRenaming = editingSessionId === session.id;
+                            const isMenuOpen = activeMenuSessionId === session.id;
+                            const isStreaming = Boolean(streamingSessions[session.id]);
+
+                            if (isRenaming) {
+                              return (
+                                <div
+                                  key={session.id}
+                                  className="flex items-center space-x-1 px-2.5 py-1 bg-surface-container rounded-lg border border-border"
+                                >
+                                  <input
+                                    type="text"
+                                    value={editingTitle}
+                                    onChange={(e) => setEditingTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleSaveRename(session.id);
+                                      if (e.key === "Escape") setEditingSessionId(null);
+                                    }}
+                                    autoFocus
+                                    className="flex-1 min-w-0 bg-transparent text-[13px] text-foreground font-medium outline-none px-1 py-0.5 border-b border-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveRename(session.id)}
+                                    className="p-1 rounded hover:bg-surface-container-high text-success transition-colors cursor-pointer"
+                                    title="Save"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSessionId(null)}
+                                    className="p-1 rounded hover:bg-surface-container-high text-muted-foreground transition-colors cursor-pointer"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={session.id}
+                                onClick={() => handleSelectChat(session.id)}
+                                className={cn(
+                                  "group relative flex items-center justify-between rounded-lg px-2.5 py-2 text-[13px] transition-colors duration-150 cursor-pointer select-none",
+                                  isActive
+                                    ? "bg-surface-container-high text-foreground font-medium shadow-xs"
+                                    : "text-muted-foreground/85 hover:text-foreground hover:bg-surface-container/60 font-normal"
+                                )}
+                              >
+                                <span className="truncate flex-1 min-w-0 text-left pr-2" title={session.title}>
+                                  {session.title}
+                                </span>
+
+                                {/* Glowing animated ping dot if generating in background */}
+                                {isStreaming && (
+                                  <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                                  </span>
+                                )}
+
+                                {/* Hover Actions: Pin + More (ChatGPT style) */}
+                                <div
+                                  className={cn(
+                                    "relative shrink-0 flex items-center space-x-0.5 transition-opacity duration-150",
+                                    isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                                  )}
+                                  ref={isMenuOpen ? actionMenuRef : undefined}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => togglePin(session.id, e)}
+                                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-container-highest cursor-pointer transition-colors"
+                                    title="Pin to top"
+                                  >
+                                    <Pin className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenuSessionId(isMenuOpen ? null : session.id);
+                                    }}
+                                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-container-highest cursor-pointer transition-colors"
+                                    title="Chat options"
+                                  >
+                                    <MoreHorizontal className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Dropdown Menu */}
+                                  {isMenuOpen && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute right-0 top-full mt-1 w-36 bg-surface border border-border rounded-lg shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-150"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartRename(session.id, session.title)}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-surface-container transition-colors cursor-pointer"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                                        Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          togglePin(session.id, e);
+                                          setActiveMenuSessionId(null);
+                                        }}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-surface-container transition-colors cursor-pointer"
+                                      >
+                                        <Pin className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                                        Pin to top
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveMenuSessionId(null);
+                                          setSessionToDelete(session.id);
+                                        }}
+                                        className="w-full flex items-center px-2.5 py-1.5 text-xs text-danger hover:bg-danger-subtle transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
                   )}
 
                   {/* Sentinel element to trigger infinite scroll loading */}

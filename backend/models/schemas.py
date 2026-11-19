@@ -91,9 +91,9 @@ class SessionRenameRequest(BaseModel):
     name: str
 
 class SessionItem(BaseModel):
-    session_id:UUID
+    session_id: UUID
     title: str
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
 class SessionList(BaseModel):
     sessions: list[SessionItem]

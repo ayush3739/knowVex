@@ -21,9 +21,12 @@ class SessionService:
     """Manage chat sessions and history."""
     
     async def create_session(self, user_id: int, db: AsyncSession) -> SessionCreate:
+        now = datetime.now(UTC)
         session = Session(
             title=f"Chat {datetime.now():%Y-%m-%d}",
             user_id=user_id,
+            created_at=now,
+            updated_at=now,
         )
 
         db.add(session)
@@ -158,7 +161,7 @@ class SessionService:
         query = (
             select(Session)
             .where(Session.user_id == user_id)
-            .order_by(Session.updated_at.desc())
+            .order_by(Session.updated_at.desc().nullslast(), Session.created_at.desc().nullslast())
         )
 
         if offset is not None and offset > 0:
@@ -174,9 +177,14 @@ class SessionService:
             has_more = True
             sessions = sessions[:limit]
 
+        now = datetime.now(UTC)
         return SessionList(
             sessions=[
-                SessionItem(session_id=s.id, title=s.title, updated_at=s.updated_at) 
+                SessionItem(
+                    session_id=s.id,
+                    title=s.title,
+                    updated_at=s.updated_at or s.created_at or now,
+                ) 
                 for s in sessions
             ],
             has_more=has_more

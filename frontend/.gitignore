@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 landing-docs/
+# 21st.dev standalone components
+src/components/21st/

@@ -1,3 +1,4 @@
+import re
 from langchain_community.embeddings import JinaEmbeddings
 from langchain_ollama import OllamaLLM
 from rank_bm25 import BM25Okapi
@@ -18,6 +19,30 @@ import logging
 
 
 logger = logging.getLogger(__name__)
+
+def clean_excerpt(text: str, max_chars: int = 350) -> str:
+    """Normalize extracted text whitespace and snap to complete sentence or word boundary."""
+    if not text:
+        return ""
+    # Collapse multiple spaces and linebreaks into clean single spaces
+    cleaned = re.sub(r'\s+', ' ', text).strip()
+    # Re-join hyphenated words split across lines (e.g. "perfor- mance" -> "performance")
+    cleaned = re.sub(r'(\b[a-zA-Z]+)-\s+([a-zA-Z]+\b)', r'\1\2', cleaned)
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    # Try snapping to the end of a complete sentence within the max_chars boundary
+    snippet = cleaned[:max_chars]
+    last_punct = max(snippet.rfind('. '), snippet.rfind('? '), snippet.rfind('! '))
+    if last_punct > 120:
+        return snippet[:last_punct + 1]
+
+    # Otherwise snap to the nearest full word boundary so words are never cut in half
+    last_space = snippet.rfind(' ')
+    if last_space > 120:
+        return snippet[:last_space] + '...'
+    return snippet + '...'
+
 
 class RetrievalQuery(BaseModel):
     original_query: str
@@ -415,7 +440,7 @@ CONTEXT:
                 "chunk_id": c.get("chunk_id"),
                 "source": c.get("source"),
                 "page_label": c.get("page_label"),
-                "excerpt": c.get("text", "")[:240],
+                "excerpt": clean_excerpt(c.get("text", "")),
             }
             for c in chunks[:5]
         ]

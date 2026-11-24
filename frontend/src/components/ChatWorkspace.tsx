@@ -4,7 +4,8 @@ import {
   Sparkles, Paperclip, FileText, FileSpreadsheet, 
   PanelRightClose, PanelRightOpen, BrainCircuit, Layers, Settings2, 
   CheckCircle2, Search, ArrowRight, ArrowDown, Plus, Loader2, AlertTriangle, X,
-  Copy, ThumbsUp, ThumbsDown, Check, RotateCcw, ChevronDown, Database
+  Copy, ThumbsUp, ThumbsDown, Check, RotateCcw, ChevronDown, Database,
+  Quote, ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/utils";
@@ -152,6 +153,7 @@ export default function ChatWorkspace({
   const [inputText, setInputText] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<SourceDocument[]>([]);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
+  const [copiedCitation, setCopiedCitation] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [chatMode, setChatMode] = useState<"auto" | "research">("auto");
   const [isLinkDropdownOpen, setIsLinkDropdownOpen] = useState(false);
@@ -331,6 +333,7 @@ export default function ChatWorkspace({
       name: file.name,
       size: `${(file.size / 1024).toFixed(0)} KB`,
       type: ext === '.csv' || ext === '.xlsx' ? 'spreadsheet' : 'pdf',
+      addedAt: 'Just now',
       chunks: 0,
       active: true,
     };
@@ -626,7 +629,8 @@ export default function ChatWorkspace({
                                       {msg.citations.map((cite: any, cIdx) => {
                                         const isWeb = cite.type === "web";
                                         const name = resolveCitationName(cite);
-                                        const badge = isWeb ? "Web" : cite.page != null ? `Page ${cite.page}` : "Doc";
+                                        const pageNum = cite.page ?? cite.page_label ?? cite.page_number;
+                                        const badge = isWeb ? "Web" : pageNum != null ? `Page ${pageNum}` : "Doc";
                                         return (
                                           <button
                                             key={cIdx}
@@ -1013,9 +1017,12 @@ export default function ChatWorkspace({
                     <h4 className="font-semibold text-foreground text-sm tracking-tight truncate max-w-[320px]">
                       {activeCitation.name || activeCitation.title || "Grounding Source"}
                     </h4>
-                    {activeCitation.page != null && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Page {activeCitation.page}</p>
-                    )}
+                    {(() => {
+                      const pageNum = activeCitation.page ?? activeCitation.page_label ?? activeCitation.page_number;
+                      return pageNum != null ? (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Page {pageNum}</p>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
                 {activeCitation.fitScore != null && (
@@ -1025,25 +1032,84 @@ export default function ChatWorkspace({
                 )}
               </div>
               
-              <div className="bg-surface p-4 rounded-xl text-xs text-muted-foreground leading-relaxed font-mono max-h-72 overflow-y-auto whitespace-pre-line border border-border/50">
-                {activeCitation.type === 'web' ? (
-                  <a href={activeCitation.url} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 break-all">
-                    {activeCitation.url}
-                  </a>
-                ) : (
-                  activeCitation.snippet || "No snippet available."
-                )}
-              </div>
+              {(() => {
+                const rawText = activeCitation.snippet || activeCitation.excerpt || activeCitation.text || "";
+                const cleanExcerpt = rawText
+                  ? rawText
+                      .replace(/\s+/g, " ")
+                      .replace(/(\b[a-zA-Z]+)-\s+([a-zA-Z]+\b)/g, "$1$2")
+                      .trim()
+                  : "No excerpt available for this citation.";
 
-              <div className="flex justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveCitation(null)}
-                  className="px-4 py-2 bg-surface border border-border hover:bg-surface-container text-foreground rounded-lg font-medium text-xs cursor-pointer transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 shadow-xs motion-reduce:transform-none"
-                >
-                  Close
-                </button>
-              </div>
+                const handleCopyCitation = () => {
+                  navigator.clipboard?.writeText(cleanExcerpt).then(() => {
+                    setCopiedCitation(true);
+                    toast.success("Citation excerpt copied to clipboard");
+                    setTimeout(() => setCopiedCitation(false), 1500);
+                  });
+                };
+
+                return (
+                  <>
+                    <div className="relative bg-surface/80 rounded-xl p-4 border border-border/80 border-l-4 border-l-primary/70 shadow-xs max-h-72 overflow-y-auto">
+                      {activeCitation.type === 'web' ? (
+                        <div className="space-y-2.5">
+                          <p className="text-xs sm:text-sm text-foreground/90 font-sans leading-relaxed">
+                            {cleanExcerpt}
+                          </p>
+                          <a 
+                            href={activeCitation.url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline underline-offset-2 break-all font-medium pt-1"
+                          >
+                            <span>Visit source website</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-primary/80 uppercase tracking-wider font-sans">
+                            <Quote className="w-3.5 h-3.5 text-primary" />
+                            <span>Grounded Passage</span>
+                          </div>
+                          <blockquote className="text-xs sm:text-sm text-foreground/90 font-sans leading-relaxed italic">
+                            "{cleanExcerpt}"
+                          </blockquote>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCopyCitation}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border hover:bg-surface-container text-muted-foreground hover:text-foreground rounded-lg font-medium text-xs cursor-pointer transition-colors active:scale-95"
+                      >
+                        {copiedCitation ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Excerpt</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveCitation(null)}
+                        className="px-4 py-2 bg-surface border border-border hover:bg-surface-container text-foreground rounded-lg font-medium text-xs cursor-pointer transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 shadow-xs motion-reduce:transform-none"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}

@@ -5,13 +5,14 @@ export interface SourceDocument {
   name: string;
   type: DocType;
   content?: string;
-  addedAt: string;
+  addedAt?: string;
   size: string;
   active: boolean;
   status?: "queued" | "indexing" | "indexed" | "failed";
   summary?: string;
   chunkCount?: number;
   embeddingModel?: string;
+  chunks?: any;
 }
 
 export interface Citation {
@@ -21,6 +22,12 @@ export interface Citation {
   type?: string;
   title?: string;
   page?: number;
+  page_label?: number | string;
+  page_number?: number;
+  excerpt?: string;
+  text?: string;
+  source?: string;
+  chunk_id?: string;
   url?: string;
 }
 

@@ -422,39 +422,65 @@ export function AsciiHalftoneBackground() {
 
 export function FadedBackgroundRibbons() {
   return (
-    <svg 
-      className="absolute inset-0 w-full h-full"
-      viewBox="0 0 1000 1000" 
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox="0 0 1000 1000"
       preserveAspectRatio="xMidYMid slice"
     >
-      <defs>
-        <radialGradient id="veil-fade" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="white" stopOpacity="1" />
-          <stop offset="100%" stopColor="white" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      
-      <g opacity="0.8">
-        {ribbons.map(ribbon => (
-          <g key={`bg-ribbon-${ribbon.id}`}>
-            <path
-              d={ribbon.d}
-              fill="none"
-              stroke={ribbon.color}
-              strokeWidth={ribbon.width * 1.5}
-              strokeLinecap="round"
-              className="opacity-20"
-            />
-            <path
-              d={ribbon.d}
-              fill="none"
-              stroke={ribbon.color}
-              strokeWidth={ribbon.width * 0.8}
-              strokeLinecap="round"
-              className="opacity-40"
-            />
-          </g>
-        ))}
+      <g opacity="0.85">
+        {ribbons.map((ribbon) => {
+          const phase = (ribbon.id * 47) % 360;
+          const rad = (phase * Math.PI) / 180;
+          const yAmp = 8 + (ribbon.id % 4) * 3;
+          const waveDuration = 8 + (ribbon.id % 5) * 2;
+
+          return (
+            <motion.g
+              key={`bg-ribbon-${ribbon.id}`}
+              animate={{
+                y: [0, -yAmp * Math.sin(rad), yAmp * Math.sin(rad), -yAmp * 0.35, 0],
+                scaleY: [1, 1.025, 0.975, 1],
+              }}
+              transition={{
+                duration: waveDuration,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              style={{ transformOrigin: "500px 500px" }}
+            >
+              <motion.path
+                d={ribbon.d}
+                fill="none"
+                stroke={ribbon.color}
+                strokeWidth={ribbon.width * 1.5}
+                strokeLinecap="round"
+                animate={{
+                  opacity: [0.18, 0.32, 0.18],
+                }}
+                transition={{
+                  duration: waveDuration,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+              <motion.path
+                d={ribbon.d}
+                fill="none"
+                stroke={ribbon.color}
+                strokeWidth={ribbon.width * 0.8}
+                strokeLinecap="round"
+                animate={{
+                  opacity: [0.4, 0.65, 0.4],
+                }}
+                transition={{
+                  duration: waveDuration,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+            </motion.g>
+          );
+        })}
       </g>
     </svg>
   );

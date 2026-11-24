@@ -246,3 +246,5 @@ frontend/.agents/
 evals/
 .vscode/
 .hallmark/salt
+# 21st.dev standalone components
+frontend/src/components/21st/

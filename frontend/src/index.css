@@ -25,11 +25,16 @@
     /* Teal — data, citations, active indicators */
     --secondary: #0DA89A;
 
-    --muted: #6B7494;
-    --muted-foreground: #9BA5C0;
+    --muted: #F1F3F9;
+    --muted-foreground: #64748B;
 
     --border: #E2E2E8;
     --ring: #5B4FE8;
+
+    /* Knowvex Logo Theme Gradient Stops (Light) */
+    --kv-stop-1: #0F172A;
+    --kv-stop-2: #2D3A46;
+    --kv-stop-3: #475569;
   }
 
   .dark {
@@ -58,6 +63,11 @@
 
     --border: #1F1F23;     /* Quieter by default — reads on hover, not at rest */
     --ring: #7B6CF6;
+
+    /* Knowvex Logo Theme Gradient Stops (Dark) */
+    --kv-stop-1: #FFFFFF;
+    --kv-stop-2: #CBD5E1;
+    --kv-stop-3: #64748B;
   }
 
   * {

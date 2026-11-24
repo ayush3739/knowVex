@@ -122,15 +122,23 @@ export default function FeatureHighlights() {
           <h3 className="mb-6 text-[15px] font-medium text-foreground transition-colors duration-200 group-hover:text-primary">
             Guaranteed Structured Output
           </h3>
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface-container-low dark:bg-[#060608] p-5 font-mono text-[11px] leading-relaxed text-muted-foreground transition-colors duration-300 group-hover:border-primary/30">
-            <span className="text-emerald-500 font-semibold">POST</span> /api/v1/research<br /><br />
+          <div className="overflow-x-auto rounded-xl border border-zinc-800/80 bg-zinc-950 dark:bg-[#07070A] p-5 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-md transition-colors duration-300 group-hover:border-primary/40">
+            <div className="flex items-center justify-between pb-2 mb-3 border-b border-zinc-800/60 text-[9px] uppercase tracking-wider text-zinc-500">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500/80" />
+                <span className="w-2 h-2 rounded-full bg-amber-500/80" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
+              </div>
+              <span className="font-semibold text-zinc-500">PYDANTIC RESPONSE MODEL</span>
+            </div>
+            <span className="text-emerald-400 font-bold">POST</span> <span className="text-zinc-200">/api/v1/research</span><br /><br />
             {'{'}<br />
-            <span className="text-muted-foreground/70">  // Strict Pydantic response model validation</span><br />
-            {'  '}<span className="text-primary font-medium">&quot;answer&quot;</span>: <span className="text-emerald-500">&quot;The 2024 climate report indicates...&quot;</span>,<br />
-            {'  '}<span className="text-primary font-medium">&quot;citations&quot;</span>: [<br />
-            {'    '}{'{'} <span className="text-primary font-medium">&quot;doc_id&quot;</span>: <span className="text-emerald-500">&quot;1a2b&quot;</span>, <span className="text-primary font-medium">&quot;chunk&quot;</span>: <span className="text-amber-500">4</span> {'}'}<br />
+            <span className="text-zinc-500">  // Strict Pydantic response model validation</span><br />
+            {'  '}<span className="text-violet-300">&quot;answer&quot;</span>: <span className="text-emerald-300">&quot;The 2024 climate report indicates...&quot;</span>,<br />
+            {'  '}<span className="text-violet-300">&quot;citations&quot;</span>: [<br />
+            {'    '}{'{'} <span className="text-violet-300">&quot;doc_id&quot;</span>: <span className="text-emerald-300">&quot;1a2b&quot;</span>, <span className="text-violet-300">&quot;chunk&quot;</span>: <span className="text-amber-400">4</span> {'}'}<br />
             {'  '}],<br />
-            {'  '}<span className="text-primary font-medium">&quot;confidence_score&quot;</span>: <span className="text-amber-500">0.92</span><br />
+            {'  '}<span className="text-violet-300">&quot;confidence_score&quot;</span>: <span className="text-cyan-400">0.92</span><br />
             {'}'}
           </div>
         </motion.div>

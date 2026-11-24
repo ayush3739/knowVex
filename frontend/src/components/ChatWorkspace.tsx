@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Message, SourceDocument, Citation } from "../types";
 import { 
-  Sparkles, Paperclip, FileText, FileSpreadsheet, 
+  Paperclip, FileText, FileSpreadsheet, 
   PanelRightClose, PanelRightOpen, BrainCircuit, Layers, Settings2, 
   CheckCircle2, Search, ArrowRight, ArrowDown, Plus, Loader2, AlertTriangle, X,
   Copy, ThumbsUp, ThumbsDown, Check, RotateCcw, ChevronDown, Database,
@@ -16,9 +16,42 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import PromptInput from "./PromptInput";
 import { useStore } from "../store/useStore";
+import BrandLogo, { KnowvexRadialLoader } from "./brand/KnowvexLogo";
+import Shimmer from "./ui/shimmer";
 
 const EMPTY_DOCS: SourceDocument[] = [];
 const STARTING_GRAPH_STATUS = [{ node: "main_router", label: "Deciding route", status: "running" }];
+
+function renderTableCellContent(content: React.ReactNode): React.ReactNode {
+  if (typeof content === "string") {
+    if (!/<br\s*\/?>/i.test(content)) return content;
+    const parts = content.split(/<br\s*\/?>/gi);
+    return parts.map((part, idx) => (
+      <React.Fragment key={idx}>
+        {idx > 0 && <br />}
+        {part}
+      </React.Fragment>
+    ));
+  }
+  if (Array.isArray(content)) {
+    return content.map((item, i) => (
+      <React.Fragment key={i}>{renderTableCellContent(item)}</React.Fragment>
+    ));
+  }
+  return content;
+}
+
+const getActiveStepLabel = (statuses: any[]): string => {
+  if (!statuses || statuses.length === 0) return "Thinking";
+  const running = [...statuses].reverse().find((s: any) => s.status === "running");
+  if (running) {
+    const raw = running.label || running.message || running.node || "Processing";
+    return String(raw).replace(/[.…]+$/, "");
+  }
+  const lastActive = [...statuses].reverse().find((s: any) => s.status !== "completed") || statuses[statuses.length - 1];
+  const raw = lastActive?.label || lastActive?.message || lastActive?.node || "Processing";
+  return String(raw).replace(/[.…]+$/, "");
+};
 
 function CodeBlock({ code, language }: { code: string; language?: string }) {
   const [copied, setCopied] = useState(false);
@@ -89,6 +122,11 @@ const formatAssistantMarkdown = (text: string) => {
       }
       if (inFence || !trimmed) return line;
 
+      // Do not alter markdown table rows or separator lines
+      if (trimmed.startsWith("|") || trimmed.includes(" | ") || /^[-:| ]+$/.test(trimmed)) {
+        return line;
+      }
+
       const boldLeadIn = trimmed.match(/^\*\*([^*:]{3,90}):\*\*\s*(.*)$/);
       if (boldLeadIn) {
         sectionIndex += 1;
@@ -150,6 +188,7 @@ export default function ChatWorkspace({
   sessionTitle = "New Research Session",
   graphStatuses = [],
 }: ChatWorkspaceProps) {
+  const logoVariant = useStore((s) => s.logoVariant);
   const [inputText, setInputText] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<SourceDocument[]>([]);
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
@@ -420,8 +459,8 @@ export default function ChatWorkspace({
                 transition={{ duration: 0.3 }}
                 className="select-none my-8 text-center flex flex-col items-center w-full"
               >
-                <div className="w-12 h-12 rounded-xl bg-surface-container border border-border flex items-center justify-center mb-4">
-                  <BrainCircuit className="w-6 h-6 text-primary" />
+                <div className="w-12 h-12 rounded-xl bg-surface-container border border-border flex items-center justify-center mb-4 shadow-sm">
+                  <BrandLogo size={28} showWordmark={false} />
                 </div>
                 <h2 className="text-xl font-bold text-foreground tracking-tight mb-1.5">
                   KnowVex Research Workstation
@@ -483,6 +522,11 @@ export default function ChatWorkspace({
                 const isLastMessage = index === messages.length - 1;
                 const isStreaming = isProcessing && isLastMessage && msg.sender === "assistant";
 
+                // When assistant message has no text yet, the pipeline execution node below handles the loading indicator
+                if (msg.sender === "assistant" && !msg.text) {
+                  return null;
+                }
+
                 return (
                   <div key={msg.id} className="w-full flex flex-col">
                     {msg.sender === "user" ? (
@@ -503,17 +547,10 @@ export default function ChatWorkspace({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-start gap-3.5 w-full min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-surface-container border border-border flex items-center justify-center text-primary shrink-0 mt-0.5">
-                          <Sparkles className="w-3.5 h-3.5" />
-                        </div>
-                        
-                        <div className={cn(
-                          "min-w-0 flex-1 flex flex-col space-y-2",
-                          isStreaming && "border-l-2 border-l-primary/40 pl-3"
-                        )}>
+                      <div className="w-full min-w-0">
+                        <div className="min-w-0 flex-1 flex flex-col space-y-2">
                           <div className="max-w-none min-w-0 text-foreground">
-                            {msg.text ? (
+                            {msg.text && (
                               <>
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm]}
@@ -572,18 +609,44 @@ export default function ChatWorkspace({
                                       );
                                     },
                                     pre: ({ children }) => <>{children}</>,
+                                    table: ({ children }) => (
+                                      <div className="my-5 w-full overflow-x-auto rounded-xl border border-border/80 bg-surface/50 shadow-sm scrollbar-thin">
+                                        <table className="w-full min-w-[500px] border-collapse text-left text-xs md:text-sm">
+                                          {children}
+                                        </table>
+                                      </div>
+                                    ),
+                                    thead: ({ children }) => (
+                                      <thead className="border-b border-border bg-surface-container/70 text-foreground font-semibold">
+                                        {children}
+                                      </thead>
+                                    ),
+                                    tbody: ({ children }) => (
+                                      <tbody className="divide-y divide-border/40 text-foreground/90 font-normal">
+                                        {children}
+                                      </tbody>
+                                    ),
+                                    tr: ({ children }) => (
+                                      <tr className="transition-colors hover:bg-surface-container/30 even:bg-surface/20">
+                                        {children}
+                                      </tr>
+                                    ),
+                                    th: ({ children }) => (
+                                      <th className="px-4 py-3 text-xs font-semibold tracking-wider text-foreground border-r border-border/40 last:border-r-0 whitespace-nowrap bg-surface-container/40">
+                                        {renderTableCellContent(children)}
+                                      </th>
+                                    ),
+                                    td: ({ children }) => (
+                                      <td className="px-4 py-3 text-xs md:text-sm text-foreground/90 border-r border-border/30 last:border-r-0 align-top leading-relaxed break-words">
+                                        {renderTableCellContent(children)}
+                                      </td>
+                                    ),
                                   }}
                                 >
                                   {formatAssistantMarkdown(msg.text)}
                                 </ReactMarkdown>
                                 {isStreaming && <span className="streaming-cursor">▋</span>}
                               </>
-                            ) : (
-                              <div className="flex items-center space-x-1 mt-1 dot-wave text-muted-foreground">
-                                <span className="bg-current"></span>
-                                <span className="bg-current"></span>
-                                <span className="bg-current"></span>
-                              </div>
                             )}
                           </div>
                         
@@ -717,50 +780,28 @@ export default function ChatWorkspace({
                 );
               })}
 
-              {/* Research Execution Pipeline Node */}
+              {/* Active AI Processing Indicator with Shimmer Step */}
               {isProcessing && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col space-y-3">
-                  <div className="flex items-center gap-2.5 mb-1">
-                    <div className="w-6 h-6 rounded-md bg-surface-container border border-border flex items-center justify-center text-primary">
-                      <Search className="w-3.5 h-3.5 animate-pulse motion-reduce:animate-none" />
-                    </div>
-                    <span className="text-xs font-semibold text-foreground tracking-tight">
-                      Executing Research Pipeline…
-                    </span>
-                  </div>
-                   
-                  <div className="pl-8 space-y-2.5">
-                    {visibleGraphStatuses.map((step: any, idx) => {
-                      const isPast = step.status === "completed";
-                      const isActive = step.status === "running";
-                      const isFailed = step.status === "failed" || step.status === "error";
-                      const label = step.label || step.message || step.node || String(step);
-                       
-                      return (
-                        <div key={`${label}-${idx}`} className={cn(
-                          "flex items-center gap-2.5 transition-opacity duration-200", 
-                          isFailed ? "opacity-100" : isPast ? "opacity-100" : isActive ? "opacity-100" : "opacity-40"
-                        )}>
-                          {isFailed ? (
-                            <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
-                          ) : isPast ? (
-                            <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
-                          ) : isActive ? (
-                            <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                              <span className="w-2 h-2 bg-primary rounded-full animate-ping motion-reduce:animate-none" />
-                            </div>
-                          ) : (
-                            <div className="w-4 h-4 rounded-full border border-border shrink-0" />
-                          )}
-                          <span className={cn(
-                            "text-xs font-medium",
-                            isFailed ? "text-destructive font-semibold" : isPast ? "text-muted-foreground" : isActive ? "text-primary font-semibold" : "text-muted-foreground"
-                          )}>
-                            {label}
-                          </span>
-                        </div>
-                      );
-                    })}
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3.5 my-3 select-none"
+                >
+                  <KnowvexRadialLoader size={34} speed={1.25} />
+                  <div className="flex items-center min-w-0">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={getActiveStepLabel(visibleGraphStatuses)}
+                        initial={{ opacity: 0, x: 4 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -4 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                      >
+                        <Shimmer className="text-sm font-semibold tracking-tight">
+                          {`${getActiveStepLabel(visibleGraphStatuses)}…`}
+                        </Shimmer>
+                      </motion.div>
+                    </AnimatePresence>
                   </div>
                 </motion.div>
               )}

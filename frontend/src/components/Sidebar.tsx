@@ -12,6 +12,7 @@ import { useStore } from "../store/useStore";
 import { api } from "../lib/api";
 import { formatResetTime } from "../lib/formatters";
 import ConfirmDialog from "./ConfirmDialog";
+import BrandLogo from "./brand/KnowvexLogo";
 
 interface SidebarProps {
   currentTab: string;
@@ -43,6 +44,7 @@ export default function Sidebar({
   const isAuthenticated = useStore((s) => s.isAuthenticated);
   const activeConvId = useStore((s) => s.activeConvId);
   const setActiveConvId = useStore((s) => s.setActiveConvId);
+  const logoVariant = useStore((s) => s.logoVariant);
   const conversations = useStore((s) => s.conversations);
   const streamingSessions = useStore((s) => s.streamingSessions);
 
@@ -331,20 +333,22 @@ export default function Sidebar({
                 type="button"
                 onClick={() => setIsCollapsed(false)}
                 className={cn(
-                  "group/sidebar-toggle relative flex h-10 w-10 items-center justify-center rounded-xl border shadow-premium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer",
+                  "group/sidebar-toggle relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer",
                   isEdgeHovering
-                    ? "border-border bg-surface text-muted-foreground"
-                    : "border-transparent bg-primary text-on-primary-container hover:bg-surface-container-high hover:text-foreground"
+                    ? "border border-border bg-surface text-muted-foreground"
+                    : "hover:bg-surface-container text-foreground"
                 )}
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
               >
-                <Database
+                <div
                   className={cn(
-                    "absolute h-4 w-4 transition-opacity transition-transform duration-150 motion-reduce:transition-none group-hover/sidebar-toggle:scale-75 group-hover/sidebar-toggle:opacity-0",
+                    "absolute transition-opacity transition-transform duration-150 motion-reduce:transition-none group-hover/sidebar-toggle:scale-75 group-hover/sidebar-toggle:opacity-0 flex items-center justify-center",
                     isEdgeHovering && "scale-75 opacity-0"
                   )}
-                />
+                >
+                  <BrandLogo size={28} showWordmark={false} />
+                </div>
                 <PanelLeftOpen
                   className={cn(
                     "absolute h-4 w-4 scale-75 opacity-0 transition-opacity transition-transform duration-150 motion-reduce:transition-none group-hover/sidebar-toggle:scale-100 group-hover/sidebar-toggle:opacity-100",
@@ -354,9 +358,7 @@ export default function Sidebar({
               </button>
             ) : (
               <>
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary-container shadow-premium shrink-0">
-                  <Database className="w-4 h-4" />
-                </div>
+                <BrandLogo size={28} showWordmark={false} className="shrink-0" />
                 <div className="min-w-0 flex-1">
                   <h1 className="text-base font-bold text-on-surface tracking-tight leading-tight truncate">
                     KnowVex

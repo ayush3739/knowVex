@@ -7,20 +7,43 @@ const capabilities = [
     title: 'Chat with Documents',
     description: 'Upload complex files, process them into hierarchical chunks, and ask questions directly. Seamless integration allows immediate search across indexed documents.',
     badge: 'Interactive Client',
+    method: 'POST',
+    path: '/api/v1/chat/stream',
+    codeType: 'SSE STREAMING',
+    codeLines: [
+      { key: 'message', val: '"Summarize chunking trade-offs"', type: 'str' },
+      { key: 'collection_id', val: '"ml_papers_2026"', type: 'str' },
+      { key: 'stream', val: 'true', type: 'bool' },
+    ],
   },
   {
     icon: Search,
     title: 'Research Mode',
     description: 'Synthesize knowledge. Decompose query targets, dynamically execute web lookups when documents lack answers, and compile cited reports.',
     badge: 'Stateful Agentic Loops',
+    method: 'POST',
+    path: '/api/v1/agent/research',
+    codeType: 'AGENT GRAPH API',
+    codeLines: [
+      { key: 'topic', val: '"Quantum computing benchmarks"', type: 'str' },
+      { key: 'depth', val: '"exhaustive"', type: 'str' },
+      { key: 'include_web', val: 'true', type: 'bool' },
+    ],
   },
   {
     icon: Terminal,
     title: 'RAG API First',
     description: 'Programmatic REST endpoints return clean structured JSON with sources, confidence score, and intermediate node execution trace logs.',
     badge: 'Developer REST Interface',
-    codeSnippet: true
-  }
+    method: 'POST',
+    path: '/api/v1/retrieve',
+    codeType: 'STRUCTURED REST',
+    codeLines: [
+      { key: 'query', val: '"Q3 Revenue impact analysis"', type: 'str' },
+      { key: 'score_threshold', val: '0.85', type: 'num' },
+      { key: 'citations', val: '"grounded"', type: 'str' },
+    ],
+  },
 ]
 
 export default function CoreCapabilities() {
@@ -95,17 +118,33 @@ export default function CoreCapabilities() {
                   <p className="mb-6 text-[13px] leading-relaxed text-muted-foreground transition-colors duration-200 group-hover:text-foreground/80">{cap.description}</p>
                 </div>
 
-                {cap.codeSnippet ? (
-                  <div className="flex h-32 flex-col justify-center rounded-lg border border-border bg-surface-container-low dark:bg-[#060608] p-4 font-mono text-[10px] leading-relaxed text-muted-foreground overflow-x-auto transition-colors duration-300 group-hover:border-primary/30">
-                    <p><span className="text-emerald-500 font-semibold">POST</span> /api/v1/research</p>
-                    <p className="mt-2 text-foreground/70">{'{'}</p>
-                    <p className="pl-4">&quot;query&quot;: &quot;Q3 Revenue impact&quot;,</p>
-                    <p className="pl-4">&quot;web_fallback&quot;: true</p>
-                    <p className="text-foreground/70">{'}'}</p>
+                <div className="flex flex-col rounded-xl border border-zinc-800/80 bg-zinc-950 dark:bg-[#07070A] p-3.5 font-mono text-[10.5px] leading-relaxed text-zinc-300 shadow-md transition-all duration-300 group-hover:border-primary/40 overflow-hidden">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800/70 text-[9px] uppercase tracking-wider">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-500/80" />
+                      <span className="w-2 h-2 rounded-full bg-amber-500/80" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                    </div>
+                    <span className="text-zinc-500 font-semibold">{cap.codeType}</span>
                   </div>
-                ) : (
-                  <div className="h-32 rounded-lg border border-border bg-surface-container-low/50 dark:bg-[#060608]/50 transition-colors duration-300 group-hover:border-primary/30" />
-                )}
+                  <div className="overflow-x-auto scrollbar-none space-y-0.5">
+                    <p>
+                      <span className="text-emerald-400 font-bold">{cap.method}</span>{' '}
+                      <span className="text-zinc-200">{cap.path}</span>
+                    </p>
+                    <p className="text-zinc-500 mt-1">{'{'}</p>
+                    {cap.codeLines.map((line, idx, arr) => (
+                      <p key={line.key} className="pl-3.5 truncate">
+                        <span className="text-violet-300">&quot;{line.key}&quot;</span>:
+                        <span className={line.type === 'bool' ? 'text-amber-300' : line.type === 'num' ? 'text-cyan-300' : 'text-emerald-300'}>
+                          {' '}{line.val}
+                        </span>
+                        {idx < arr.length - 1 ? ',' : ''}
+                      </p>
+                    ))}
+                    <p className="text-zinc-500">{'}'}</p>
+                  </div>
+                </div>
               </motion.div>
             )
           })}

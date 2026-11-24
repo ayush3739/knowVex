@@ -3,11 +3,13 @@ import { Github, ArrowRight, Sun, Moon } from 'lucide-react'
 import { navigate } from '../../lib/navigation'
 import { useStore } from '../../store/useStore'
 import { ShinyButton } from '../../components/ui/shiny-button'
+import BrandLogo from '../../components/brand/KnowvexLogo'
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const theme = useStore((s) => s.theme)
   const setTheme = useStore((s) => s.setTheme)
+  const logoVariant = useStore((s) => s.logoVariant)
 
   const isArchitecture = typeof window !== 'undefined' && 
     (window.location.pathname === '/architecture' || window.location.hash.includes('architecture'))
@@ -83,11 +85,7 @@ export default function Navbar() {
           onClick={(e) => handleClick(e, '/')}
           className="flex items-center gap-2 transition-opacity hover:opacity-80"
         >
-          <span
-            className="font-sans text-sm font-semibold tracking-tight text-foreground"
-          >
-            KnowVex
-          </span>
+          <BrandLogo size={22} showWordmark={true} />
         </a>
 
         {/* Center nav links — desktop */}

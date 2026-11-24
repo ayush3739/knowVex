@@ -4,6 +4,7 @@ import { Menu, Database } from "lucide-react";
 import { Toaster } from "sonner";
 import NoInternetBanner from "../NoInternetBanner";
 import { useStore } from "../../store/useStore";
+import BrandLogo from "../brand/KnowvexLogo";
 
 interface AppShellProps {
   currentTab: string;
@@ -30,6 +31,7 @@ export function AppShell({
   onRenameSession,
   children,
 }: AppShellProps) {
+  const logoVariant = useStore((s) => s.logoVariant);
   const theme = useStore((s) => s.theme);
 
   return (
@@ -56,15 +58,14 @@ export function AppShell({
 
       {/* Mobile Top Navigation rail bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-background/80 backdrop-blur-md border-b border-border flex items-center justify-between px-6 z-40 select-none">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-3">
           <Menu
             className="w-6 h-6 text-primary cursor-pointer active:scale-90 transition-transform"
             onClick={() => setIsMobileSidebarOpen(true)}
           />
-          <h1 className="text-sm font-black text-primary tracking-tight">KnowVex</h1>
+          <BrandLogo size={20} showWordmark={true} />
         </div>
         <div className="flex items-center space-x-2">
-          <Database className="w-4 h-4 text-primary" />
           <span className="text-[10px] uppercase tracking-wider font-extrabold text-secondary">v4.2.0</span>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { useStore, AuthMode } from "../store/useStore";
 import { BrainCircuit, Eye, EyeOff, Loader2, Mail, CheckCircle2, AlertTriangle, ArrowLeft, ShieldCheck, Home } from "lucide-react";
 import { LivingIntelligenceShowcase, AsciiHalftoneBackground, FadedBackgroundRibbons } from "./LivingIntelligenceShowcase";
 import { api, ApiError, NetworkError, API_BASE } from "../lib/api";
+import BrandLogo from "./brand/KnowvexLogo";
 
 // Password strength helper
 function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
@@ -23,6 +24,7 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
 export default function AuthView() {
   const authMode = useStore((s) => s.authMode);
   const setAuthMode = useStore((s) => s.setAuthMode);
+  const logoVariant = useStore((s) => s.logoVariant);
   const setTokens = useStore((s) => s.setTokens);
 
   const [email, setEmail] = useState("");
@@ -152,8 +154,7 @@ export default function AuthView() {
           >
             {/* Top Company Logo (Mobile Only) */}
             <div className="flex lg:hidden justify-center items-center gap-2 mb-12 text-white">
-              <BrainCircuit size={24} />
-              <span className="text-xl font-semibold tracking-tight">KnowVex Inc.</span>
+              <BrandLogo variant={logoVariant} size={24} showWordmark={true} wordmarkClassName="text-xl font-semibold tracking-tight text-white" />
             </div>
 
             <div className="relative flex flex-col w-full">

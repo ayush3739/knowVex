@@ -130,7 +130,7 @@ export default function ArchitectureDiagram() {
                 {layer.chips.map((chip) => (
                   <span
                     key={chip}
-                    className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors duration-200 group-hover:border-primary/30 group-hover:text-foreground"
+                    className="rounded-md border border-border/75 dark:border-white/[0.08] bg-surface-container/60 dark:bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-foreground/80 dark:text-zinc-300 transition-colors duration-200 group-hover:border-primary/40 group-hover:text-primary group-hover:bg-primary/5"
                   >
                     {chip}
                   </span>

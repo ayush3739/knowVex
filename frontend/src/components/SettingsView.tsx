@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { formatResetTime } from "../lib/formatters";
 import { motion, AnimatePresence } from "framer-motion";
 import ConfirmDialog from "./ConfirmDialog";
+import BrandLogo, { KnowvexLogoIcon } from "./brand/KnowvexLogo";
 
 interface SettingsViewProps {
   params: ModelParams;
@@ -388,36 +389,72 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
 
             {/* Appearance */}
             {activeSection === "appearance" && (
-              <div className="premium-card p-6 space-y-4">
-                <SectionHeading>Color theme</SectionHeading>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { id: "light", label: "Light", icon: Sun, desc: "Clean bright workspace" },
-                    { id: "dark", label: "Dark", icon: Moon, desc: "Dark environment" }
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTheme(t.id as "light" | "dark")}
-                      className={cn(
-                        "relative p-4 rounded-xl border text-left cursor-pointer transition-colors group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-                        theme === t.id
-                          ? "border-primary/50 bg-primary/5"
-                          : "border-border bg-surface hover:bg-surface-container-low"
-                      )}
-                    >
-                      {theme === t.id && (
-                        <div className="absolute top-2 right-2">
-                          <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
+              <div className="premium-card p-6 space-y-6">
+                <div>
+                  <SectionHeading>Color theme</SectionHeading>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: "light", label: "Light", icon: Sun, desc: "Clean bright workspace" },
+                      { id: "dark", label: "Dark", icon: Moon, desc: "Dark environment" }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTheme(t.id as "light" | "dark")}
+                        className={cn(
+                          "relative p-4 rounded-xl border text-left cursor-pointer transition-colors group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                          theme === t.id
+                            ? "border-primary/50 bg-primary/5"
+                            : "border-border bg-surface hover:bg-surface-container-low"
+                        )}
+                      >
+                        {theme === t.id && (
+                          <div className="absolute top-2 right-2">
+                            <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
                           </div>
+                        )}
+                        <t.icon className={cn("w-5 h-5 mb-2", theme === t.id ? "text-primary" : "text-muted-foreground")} />
+                        <p className="text-sm font-semibold text-foreground">{t.label}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{t.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border/50">
+                  <SectionHeading>Brand Identity</SectionHeading>
+                  <p className="text-xs text-muted-foreground -mt-2 mb-3">
+                    The official Knowvex brand emblem with dynamic metallic gradients optimized for both light and dark workspaces.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-4 rounded-xl border border-border/80 bg-surface flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-[#0A0A0C] border border-white/10 flex items-center justify-center shrink-0 shadow-sm">
+                        <KnowvexLogoIcon size={32} theme="dark" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-foreground">Dark Theme</p>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-muted-foreground">Luminous Silver</span>
                         </div>
-                      )}
-                      <t.icon className={cn("w-5 h-5 mb-2", theme === t.id ? "text-primary" : "text-muted-foreground")} />
-                      <p className="text-sm font-semibold text-foreground">{t.label}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{t.desc}</p>
-                    </button>
-                  ))}
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Titanium metallic gradient with subtle halo glow</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-border/80 bg-surface flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
+                        <KnowvexLogoIcon size={32} theme="light" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-foreground">Light Theme</p>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-muted-foreground">Deep Slate</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Midnight steel metallic gradient with crisp drop shadow</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

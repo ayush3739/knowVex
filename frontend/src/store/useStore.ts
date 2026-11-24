@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { SourceDocument, Conversation, ModelParams, DocType, UserQuota, Message, Citation } from '../types';
 
 export type AuthMode = 'login' | 'register' | 'forgot-password' | 'verification-sent' | 'forgot-password-sent';
+export type LogoVariant = 'hexagon' | 'angular-k' | 'modern-wave';
 
 export interface SessionStreamState {
   sessionId: string;
@@ -68,6 +69,8 @@ interface AppState {
   setQuota: (quota: UserQuota | null) => void;
   isProWelcomeOpen: boolean;
   setIsProWelcomeOpen: (open: boolean) => void;
+  logoVariant: LogoVariant;
+  setLogoVariant: (variant: LogoVariant) => void;
   logout: () => void;
 }
 
@@ -95,6 +98,8 @@ export const useStore = create<AppState>()(
       setQuota: (quota) => set({ quota }),
       isProWelcomeOpen: false,
       setIsProWelcomeOpen: (open) => set({ isProWelcomeOpen: open }),
+      logoVariant: 'hexagon',
+      setLogoVariant: (logoVariant) => set({ logoVariant }),
       logout: () => set({
         accessToken: null,
         refreshToken: null,

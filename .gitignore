@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 issues.md
+frontend/public/knowvex_ai_ui_loader_streaming_showcase.html
 eval/
 # C extensions
 *.so

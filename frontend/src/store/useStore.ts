@@ -17,6 +17,9 @@ export interface SessionStreamState {
   sessionTitle: string;
   startedAt: string;
   abortController?: AbortController;
+  toolTrace?: string[];
+  confidence?: number;
+  telemetry?: any;
 }
 
 interface UserData {
@@ -71,6 +74,8 @@ interface AppState {
   setIsProWelcomeOpen: (open: boolean) => void;
   logoVariant: LogoVariant;
   setLogoVariant: (variant: LogoVariant) => void;
+  showConfidence: boolean;
+  setShowConfidence: (show: boolean) => void;
   logout: () => void;
 }
 
@@ -100,6 +105,8 @@ export const useStore = create<AppState>()(
       setIsProWelcomeOpen: (open) => set({ isProWelcomeOpen: open }),
       logoVariant: 'hexagon',
       setLogoVariant: (logoVariant) => set({ logoVariant }),
+      showConfidence: true,
+      setShowConfidence: (showConfidence) => set({ showConfidence }),
       logout: () => set({
         accessToken: null,
         refreshToken: null,
@@ -182,7 +189,8 @@ export const useStore = create<AppState>()(
         theme: state.theme,
         accessToken: state.accessToken,
         user: state.user,
-        params: state.params
+        params: state.params,
+        showConfidence: state.showConfidence,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

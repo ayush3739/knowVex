@@ -72,7 +72,7 @@ export default function PromptInput({
   }, [value, adjustHeight]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       if (value.trim() && !isProcessing) {
         onSubmit();
@@ -98,16 +98,16 @@ export default function PromptInput({
     e.stopPropagation();
     setIsDragging(false);
 
-    const file = e.dataTransfer.files?.[0];
-    if (file && onAttachFile) {
-      onAttachFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0 && onAttachFile) {
+      Array.from(files).forEach((file) => onAttachFile(file));
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onAttachFile) {
-      onAttachFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0 && onAttachFile) {
+      Array.from(files).forEach((file) => onAttachFile(file));
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -133,6 +133,7 @@ export default function PromptInput({
         onChange={handleFileChange}
         className="hidden"
         accept=".pdf,.txt,.md,.docx"
+        multiple
       />
 
       {/* Drag & Drop Visual Overlay */}

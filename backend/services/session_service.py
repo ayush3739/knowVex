@@ -57,6 +57,7 @@ class SessionService:
         sources: list | None = None,
         confidence: float = 0.0,
         tool_used: str | None = None,
+        debug: dict | None = None,
     ) -> MessageCreateResponse:
         """Add message to session history."""
         if tool_used and len(tool_used) > 100:
@@ -70,6 +71,7 @@ class SessionService:
             chunks = None,
             confidence = confidence,
             citations = {"sources": sources or []},
+            debug = debug,
         )
         db.add(mess)
         await db.execute(

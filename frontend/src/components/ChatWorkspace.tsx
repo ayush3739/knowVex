@@ -1,11 +1,12 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Message, SourceDocument, Citation } from "../types";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { Message, SourceDocument, Citation, MessageTelemetry } from "../types";
 import { 
   Paperclip, FileText, FileSpreadsheet, 
   PanelRightClose, PanelRightOpen, BrainCircuit, Layers, Settings2, 
   CheckCircle2, Search, ArrowRight, ArrowDown, Plus, Loader2, AlertTriangle, X,
   Copy, ThumbsUp, ThumbsDown, Check, RotateCcw, ChevronDown, Database,
-  Quote, ExternalLink
+  Quote, ExternalLink, Activity, Cpu, AlertCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/utils";
@@ -90,29 +91,148 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 export const cleanMessageText = (text: string): string => {
   if (!text) return "";
   return text
-    // Strip bracketed hex/hash citations e.g. 【67bb9d91487d4bbe】
-    .replace(/【[a-zA-Z0-9_-]{6,}】/g, "")
-    // Strip [chunk_id=...]
-    .replace(/\[chunk_id=[^\]]+\]/g, "")
-    // Strip raw 32-char hex filenames if output literally in text e.g. 27c46b7e13c349d18a158d7b50e05bc7.pdf
-    .replace(/\b[a-f0-9]{32}\.(?:pdf|docx|txt|md)\b/gi, "")
     // Clean up spaces before punctuation
     .replace(/ +([.,;:?!])/g, "$1");
 };
 
+export const transformBracketCitations = (text: string, citations?: Citation[]): string => {
+  if (!text) return "";
+
+  const lines = text.split("\n");
+  let inCodeBlock = false;
+
+  const processedLines = lines.map((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+      inCodeBlock = !inCodeBlock;
+      return line;
+    }
+    if (inCodeBlock) return line;
+
+    // Split by inline backticks so code spans are preserved without alterations
+    const segments = line.split("`");
+    const processedSegments = segments.map((seg, sIdx) => {
+      // Odd indices are inside inline code: leave untouched
+      if (sIdx % 2 === 1) return seg;
+
+      let s = seg;
+
+      // 1. Bracketed chunk_id: 【67bb9d91487d4bbe】 or 【chunk_id=...】
+      s = s.replace(/【(?:chunk_id=)?([a-zA-Z0-9_-]{6,})】/g, (match, chunkId) => {
+        const cleanId = chunkId.replace(/['"]/g, "").trim();
+        let idx = 0;
+        let label = "1";
+        if (citations && citations.length > 0) {
+          const foundIdx = citations.findIndex(
+            (c) =>
+              c.chunk_id === cleanId ||
+              (c.chunk_id && cleanId.includes(c.chunk_id)) ||
+              (c.chunk_id && c.chunk_id.includes(cleanId))
+          );
+          idx = foundIdx !== -1 ? foundIdx : 0;
+          const cite = citations[idx];
+          const pageNum = cite?.page ?? cite?.page_label ?? cite?.page_number;
+          label = pageNum != null ? `Page ${pageNum}` : `${idx + 1}`;
+        }
+        return `[${label}](cite://${idx})`;
+      });
+
+      // 2. Bracketed chunk_id tag: [chunk_id=...]
+      s = s.replace(/\[chunk_id=([^\]]+)\]/g, (match, chunkId) => {
+        const cleanId = chunkId.replace(/['"]/g, "").trim();
+        let idx = 0;
+        let label = "1";
+        if (citations && citations.length > 0) {
+          const foundIdx = citations.findIndex(
+            (c) =>
+              c.chunk_id === cleanId ||
+              (c.chunk_id && cleanId.includes(c.chunk_id)) ||
+              (c.chunk_id && c.chunk_id.includes(cleanId))
+          );
+          idx = foundIdx !== -1 ? foundIdx : 0;
+          const cite = citations[idx];
+          const pageNum = cite?.page ?? cite?.page_label ?? cite?.page_number;
+          label = pageNum != null ? `Page ${pageNum}` : `${idx + 1}`;
+        }
+        return `[${label}](cite://${idx})`;
+      });
+
+      // 3. Numeric citations: [1], [2], [1, 2], [1, 2, 3], or ranges [1-3]
+      // Negative lookbehind: not preceded by [ or ]
+      // Negative lookahead: not followed by ( (markdown link) or : (reference link)
+      s = s.replace(/(?<![\[\]])\[([0-9]+(?:\s*-\s*[0-9]+|\s*,\s*[0-9]+)*)\](?!\s*[:\(])/g, (match, numGroup) => {
+        // Handle range e.g. 1-3
+        const rangeMatch = numGroup.match(/^([0-9]+)\s*-\s*([0-9]+)$/);
+        if (rangeMatch) {
+          const start = parseInt(rangeMatch[1], 10);
+          const end = parseInt(rangeMatch[2], 10);
+          if (!isNaN(start) && !isNaN(end) && end >= start && end - start <= 10) {
+            const badges: string[] = [];
+            for (let n = start; n <= end; n++) {
+              const idx = Math.max(0, n - 1);
+              badges.push(`[${n}](cite://${idx})`);
+            }
+            return badges.join("");
+          }
+        }
+
+        const numbers = numGroup
+          .split(",")
+          .map((item: string) => parseInt(item.trim(), 10))
+          .filter((n: number) => !isNaN(n));
+        if (numbers.length === 0) return match;
+        return numbers
+          .map((n: number) => {
+            const idx = Math.max(0, n - 1);
+            return `[${n}](cite://${idx})`;
+          })
+          .join("");
+      });
+
+      // 4. [Page X], [Pages X], [p. X], [pp. X]
+      s = s.replace(/(?<![\[\]])\[(?:Pages?|pp?\.)\s*([0-9]+)\](?!\s*[:\(])/gi, (match, pageStr) => {
+        const pageNum = parseInt(pageStr, 10);
+        let idx = 0;
+        if (citations && citations.length > 0) {
+          const found = citations.findIndex(
+            (c) => (c.page ?? c.page_label ?? c.page_number) === pageNum
+          );
+          if (found !== -1) idx = found;
+        }
+        return `[Page ${pageNum}](cite://${idx})`;
+      });
+
+      // 5. [Doc X], [Document X], [Source X], [Ref X]
+      s = s.replace(/(?<![\[\]])\[(?:Docs?|Documents?|Source|Ref)(?::|\s+)\s*([0-9]+|[a-zA-Z0-9_.-]+)\](?!\s*[:\(])/gi, (match, docRef) => {
+        const n = parseInt(docRef, 10);
+        const idx = !isNaN(n) ? Math.max(0, n - 1) : 0;
+        return `[Doc ${docRef}](cite://${idx})`;
+      });
+
+      return s;
+    });
+
+    return processedSegments.join("`");
+  });
+
+  return processedLines.join("\n");
+};
+
 const markdownCache = new Map<string, string>();
 
-const formatAssistantMarkdown = (text: string) => {
+const formatAssistantMarkdown = (text: string, citations?: Citation[]) => {
   if (!text) return "";
-  if (markdownCache.has(text)) {
-    return markdownCache.get(text)!;
+  const cacheKey = `${text}_${citations?.length || 0}`;
+  if (markdownCache.has(cacheKey)) {
+    return markdownCache.get(cacheKey)!;
   }
 
   let inFence = false;
   let sectionIndex = 0;
   const cleanedText = cleanMessageText(text);
+  const withCitations = transformBracketCitations(cleanedText, citations);
 
-  const formatted = cleanedText
+  const formatted = withCitations
     .split("\n")
     .map((line) => {
       const trimmed = line.trim();
@@ -153,9 +273,854 @@ const formatAssistantMarkdown = (text: string) => {
   if (markdownCache.size > 200) {
     markdownCache.clear();
   }
-  markdownCache.set(text, formatted);
+  markdownCache.set(cacheKey, formatted);
   return formatted;
 };
+
+// ---------------------------------------------------------------------------
+// Perplexity-Style Inline Citation Component
+// ---------------------------------------------------------------------------
+interface InlineCitationProps {
+  citation?: Citation;
+  index: number;
+  label: React.ReactNode;
+  onSelect?: (citation: Citation) => void;
+}
+
+export function InlineCitation({ citation, index, label, onSelect }: InlineCitationProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; placeAbove: boolean } | null>(null);
+  const badgeRef = useRef<HTMLButtonElement | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isHovered) return;
+    const handleScroll = () => {
+      setIsHovered(false);
+    };
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [isHovered]);
+
+  const showHoverCard = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (badgeRef.current) {
+      const rect = badgeRef.current.getBoundingClientRect();
+      const cardWidth = 320;
+      let left = rect.left + rect.width / 2 - cardWidth / 2;
+      left = Math.max(12, Math.min(window.innerWidth - cardWidth - 12, left));
+      const placeAbove = rect.top > 200;
+      const top = placeAbove ? rect.top - 8 : rect.bottom + 8;
+      setCoords({ top, left, placeAbove });
+    }
+    setIsHovered(true);
+  };
+
+  const hideHoverCard = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 180);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (citation && onSelect) {
+      onSelect(citation);
+    }
+  };
+
+  const isWeb = citation?.type === "web";
+  const name = citation?.name || citation?.title || (citation?.url ? "Web Source" : "Knowledge Base Document");
+  const pageNum = citation?.page ?? citation?.page_label ?? citation?.page_number;
+  const badgeText = isWeb ? "Web" : pageNum != null ? `Page ${pageNum}` : "Doc";
+  const snippet = citation?.snippet || citation?.excerpt || citation?.text || "";
+
+  const rawLabel = String(label);
+  const displayLabel = rawLabel.startsWith("[") && rawLabel.endsWith("]") ? rawLabel : `[${rawLabel}]`;
+
+  return (
+    <>
+      <button
+        ref={badgeRef}
+        type="button"
+        onMouseEnter={showHoverCard}
+        onMouseLeave={hideHoverCard}
+        onClick={handleClick}
+        className={cn(
+          "inline-flex items-center justify-center font-mono text-[10.5px] font-semibold leading-none",
+          "text-primary bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50",
+          "rounded px-1.5 py-0.5 mx-0.5 align-baseline transition-all duration-150 cursor-pointer select-none shadow-2xs hover:shadow-xs active:scale-95"
+        )}
+        title={name}
+        aria-label={`Citation ${rawLabel}: ${name}`}
+      >
+        {displayLabel}
+      </button>
+
+      {isHovered && coords && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            transform: coords.placeAbove ? "translateY(-100%)" : "none",
+            zIndex: 9999,
+          }}
+          onMouseEnter={() => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          }}
+          onMouseLeave={hideHoverCard}
+          className="w-80 pointer-events-auto select-none"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            onClick={handleClick}
+            className="rounded-xl bg-surface/90 dark:bg-zinc-900/90 backdrop-blur-md border border-border/80 shadow-2xl p-3.5 text-left cursor-pointer transition-all hover:border-primary/50"
+          >
+            {/* Header: Type icon, Document Name, Page badge */}
+            <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {isWeb ? (
+                  <Search className="w-3.5 h-3.5 text-primary shrink-0" />
+                ) : name.endsWith(".xlsx") || name.endsWith(".csv") ? (
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                )}
+                <span className="font-semibold text-xs text-foreground truncate max-w-[170px]" title={name}>
+                  {name}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold font-mono bg-primary/15 text-primary border border-primary/25 px-1.5 py-0.5 rounded shrink-0">
+                {badgeText}
+              </span>
+            </div>
+
+            {/* Snippet quote */}
+            <div className="mt-2.5 p-2 rounded-lg bg-surface-container/60 dark:bg-zinc-800/50 border-l-2 border-primary text-[11px] leading-relaxed text-foreground/80 italic font-serif line-clamp-4">
+              "{snippet || "Grounded context chunk retrieved from knowledge store."}"
+            </div>
+
+            {/* Footer action hint */}
+            <div className="mt-2.5 pt-1.5 border-t border-border/40 flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>Click to open in inspector</span>
+              <ExternalLink className="w-3 h-3 text-primary" />
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry Badge with Glassmorphic HoverCard Breakdown
+// ---------------------------------------------------------------------------
+export function TelemetryBadge({ telemetry }: { telemetry?: MessageTelemetry }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; placeAbove: boolean } | null>(null);
+  const badgeRef = useRef<HTMLButtonElement | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isHovered) return;
+    const handleScroll = () => {
+      setIsHovered(false);
+    };
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [isHovered]);
+
+  if (!telemetry) return null;
+
+  const totalTokens = telemetry.total_tokens || ((telemetry.prompt_tokens || 0) + (telemetry.completion_tokens || 0));
+  const latency = telemetry.latency ?? (telemetry.latency_ms ? telemetry.latency_ms / 1000 : null);
+
+  if (!totalTokens && latency === null) return null;
+
+  const formatTokens = (t: number) => {
+    if (t >= 1000) return `${(t / 1000).toFixed(1)}k tokens`;
+    return `${t} tokens`;
+  };
+
+  const latencyStr = latency !== null ? `${latency < 1 ? latency.toFixed(2) : latency.toFixed(1)}s` : null;
+
+  const badgeText = totalTokens && latencyStr
+    ? `${formatTokens(totalTokens)} • ${latencyStr}`
+    : totalTokens
+    ? formatTokens(totalTokens)
+    : latencyStr!;
+
+  const showHoverCard = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (badgeRef.current) {
+      const rect = badgeRef.current.getBoundingClientRect();
+      const cardWidth = 260;
+      let left = rect.left + rect.width / 2 - cardWidth / 2;
+      left = Math.max(12, Math.min(window.innerWidth - cardWidth - 12, left));
+      const placeAbove = rect.top > 180;
+      const top = placeAbove ? rect.top - 8 : rect.bottom + 8;
+      setCoords({ top, left, placeAbove });
+    }
+    setIsHovered(true);
+  };
+
+  const hideHoverCard = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 180);
+  };
+
+  return (
+    <>
+      <button
+        ref={badgeRef}
+        type="button"
+        onMouseEnter={showHoverCard}
+        onMouseLeave={hideHoverCard}
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono text-muted-foreground/80 hover:text-foreground bg-surface-container/40 hover:bg-surface-container border border-border/50 hover:border-border transition-colors cursor-pointer select-none"
+        title="Execution Telemetry"
+      >
+        <Activity className="w-3 h-3 text-primary/70" />
+        <span>{badgeText}</span>
+      </button>
+
+      {isHovered && coords && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            transform: coords.placeAbove ? "translateY(-100%)" : "none",
+            zIndex: 9999,
+          }}
+          onMouseEnter={() => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          }}
+          onMouseLeave={hideHoverCard}
+          className="w-64 pointer-events-auto select-none"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="rounded-xl bg-surface/90 dark:bg-zinc-900/90 backdrop-blur-md border border-border/80 shadow-2xl p-3 text-left"
+          >
+            <div className="flex items-center gap-2 border-b border-border/40 pb-2 text-xs font-semibold text-foreground">
+              <Cpu className="w-3.5 h-3.5 text-primary" />
+              <span>Inference Telemetry</span>
+            </div>
+
+            <div className="mt-2.5 space-y-1.5 text-xs">
+              {telemetry.provider && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Provider</span>
+                  <span className="font-medium text-foreground font-mono text-[11px]">{telemetry.provider}</span>
+                </div>
+              )}
+              {latencyStr && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Latency</span>
+                  <span className="font-medium text-foreground font-mono text-[11px]">
+                    {telemetry.latency_ms ? `${Math.round(telemetry.latency_ms)}ms` : latencyStr}
+                  </span>
+                </div>
+              )}
+              {telemetry.prompt_tokens !== undefined && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Prompt tokens</span>
+                  <span className="font-medium text-foreground font-mono text-[11px]">{telemetry.prompt_tokens.toLocaleString()}</span>
+                </div>
+              )}
+              {telemetry.completion_tokens !== undefined && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Completion tokens</span>
+                  <span className="font-medium text-foreground font-mono text-[11px]">{telemetry.completion_tokens.toLocaleString()}</span>
+                </div>
+              )}
+              {totalTokens > 0 && (
+                <div className="flex items-center justify-between text-muted-foreground pt-1.5 border-t border-border/40 font-medium">
+                  <span className="text-foreground">Total Tokens</span>
+                  <span className="font-bold text-primary font-mono text-[11px]">{totalTokens.toLocaleString()}</span>
+                </div>
+              )}
+              {telemetry.failover_count !== undefined && telemetry.failover_count > 0 && (
+                <div className="flex items-center justify-between text-amber-500 text-[10px] pt-1">
+                  <span>Auto-Failovers</span>
+                  <span className="font-bold font-mono">{telemetry.failover_count}</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reasoning & Thought Disclosure Component
+// ---------------------------------------------------------------------------
+interface ReasoningDisclosureProps {
+  isStreaming: boolean;
+  graphStatuses?: any[];
+  toolTrace?: string[];
+  confidence?: number;
+  telemetry?: MessageTelemetry;
+  activeStepLabel?: string;
+}
+
+export function ReasoningDisclosure({
+  isStreaming,
+  graphStatuses,
+  toolTrace,
+  confidence,
+  telemetry,
+  activeStepLabel,
+}: ReasoningDisclosureProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const showConfidence = useStore((s) => s.showConfidence);
+
+  // If streaming, render active shimmer loader (no box, no pill, clean 34px loader)
+  if (isStreaming) {
+    return (
+      <div className="flex items-center gap-3.5 my-2.5 select-none w-fit">
+        <KnowvexRadialLoader size={34} speed={1.25} />
+        <div className="flex items-center min-w-0">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeStepLabel || "Thinking"}
+              initial={{ opacity: 0, x: 4 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -4 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              <Shimmer className="text-sm font-semibold tracking-tight">
+                {activeStepLabel ? `${activeStepLabel}…` : "Thinking…"}
+              </Shimmer>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
+
+  const steps = (graphStatuses && graphStatuses.length > 0)
+    ? graphStatuses
+    : (toolTrace && toolTrace.length > 0)
+    ? toolTrace.map((node) => ({ node, label: node.replace(/_/g, " "), status: "completed" }))
+    : [];
+
+  if (steps.length === 0 && confidence === undefined && (!toolTrace || toolTrace.length === 0)) {
+    return null;
+  }
+
+  const stepCount = steps.length || (toolTrace ? toolTrace.length : 1);
+  const summaryLabel = `Thought process (${stepCount} ${stepCount === 1 ? 'step' : 'steps'})`;
+
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="inline-flex items-center gap-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none group"
+        title={isExpanded ? "Collapse thought process" : "View thought process"}
+      >
+        <BrainCircuit className="w-3.5 h-3.5 text-primary group-hover:scale-110 transition-transform" />
+        <span>{summaryLabel}</span>
+        <ChevronDown
+          className={cn(
+            "w-3 h-3 text-muted-foreground transition-transform duration-200",
+            isExpanded && "rotate-180 text-primary"
+          )}
+        />
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="overflow-hidden my-2"
+          >
+            <div className="space-y-1.5 py-1 text-xs text-muted-foreground">
+              {showConfidence && confidence !== undefined && (
+                <div className="flex items-center gap-1.5 text-[11px] pb-0.5">
+                  <span className="text-muted-foreground">Confidence:</span>
+                  <span
+                    className={cn(
+                      "font-mono font-medium",
+                      confidence >= 0.8
+                        ? "text-emerald-500"
+                        : confidence >= 0.5
+                        ? "text-amber-500"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    {Math.round(confidence <= 1 ? confidence * 100 : confidence)}%
+                  </span>
+                </div>
+              )}
+
+              {steps.map((step: any, sIdx: number) => {
+                const isRunning = isStreaming && step.status === "running";
+                const isFailed = step.status === "failed";
+                const label = step.label || (step.node ? step.node.replace(/_/g, " ") : `Step ${sIdx + 1}`);
+
+                return (
+                  <div key={sIdx} className="flex items-center gap-2 text-xs">
+                    <span className="shrink-0">
+                      {isRunning ? (
+                        <Loader2 className="w-3 h-3 text-primary animate-spin" />
+                      ) : isFailed ? (
+                        <AlertCircle className="w-3 h-3 text-danger" />
+                      ) : (
+                        <Check className="w-3 h-3 text-emerald-500" />
+                      )}
+                    </span>
+
+                    <span className="text-foreground/90 capitalize font-medium">
+                      {label}
+                    </span>
+
+                    {step.chunks_found !== undefined && (
+                      <span className="text-[11px] text-muted-foreground/70">
+                        · {step.chunks_found} chunks retrieved
+                      </span>
+                    )}
+                    {step.results_found !== undefined && (
+                      <span className="text-[11px] text-muted-foreground/70">
+                        · {step.results_found} web sources
+                      </span>
+                    )}
+                    {step.routing_reason && (
+                      <span className="text-[11px] text-muted-foreground/60 italic">
+                        ({step.routing_reason})
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Memoized Message Item Component (Historical Turns 1..N-1 Do Not Re-render)
+// ---------------------------------------------------------------------------
+interface MessageItemProps {
+  msg: Message;
+  index: number;
+  isLastMessage: boolean;
+  isStreaming: boolean;
+  copiedId: string | null;
+  feedbacks: Record<string, "up" | "down">;
+  expandedSources: Record<string, boolean>;
+  chatMode: "auto" | "research";
+  onCopy: (id: string, text: string) => void;
+  onFeedback: (id: string, type: "up" | "down") => void;
+  onRetryMessage?: (messageId: string, mode?: "auto" | "research") => void;
+  toggleMessageSources: (id: string) => void;
+  setActiveCitation: (cite: any) => void;
+  resolveCitationName: (cite: any) => string;
+  visibleGraphStatuses: any[];
+}
+
+export const MessageItem = React.memo(function MessageItem({
+  msg,
+  index,
+  isLastMessage,
+  isStreaming,
+  copiedId,
+  feedbacks,
+  expandedSources,
+  chatMode,
+  onCopy,
+  onFeedback,
+  onRetryMessage,
+  toggleMessageSources,
+  setActiveCitation,
+  resolveCitationName,
+  visibleGraphStatuses,
+}: MessageItemProps) {
+  // If assistant message has no text and is not streaming
+  if (msg.sender === "assistant" && !msg.text && !isStreaming) {
+    const hasFailed = msg.graphStatuses?.some((s: any) => s.status === "failed" || s.status === "error");
+    if (hasFailed) {
+      const failedMsg = msg.graphStatuses?.find((s: any) => s.status === "failed" || s.status === "error")?.message || "Stream interrupted. Please try again.";
+      return (
+        <div className="w-full flex flex-col my-2">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground flex items-start gap-3 shadow-sm">
+            <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-destructive leading-relaxed">⚠️ {failedMsg}</p>
+              {onRetryMessage && (
+                <button
+                  type="button"
+                  onClick={() => onRetryMessage(msg.id, chatMode)}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border/80 hover:bg-surface-container text-xs font-semibold text-foreground transition-colors cursor-pointer shadow-sm active:scale-95"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-primary" />
+                  <span>Retry generation</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  if (msg.sender === "user") {
+    return (
+      <div className="w-full flex flex-col">
+        <div className="flex flex-col items-end w-full">
+          <div className="max-w-[85%] rounded-2xl bg-surface-container border border-border/80 px-4 py-3 text-sm text-foreground">
+            <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+          </div>
+          <div className="flex items-center gap-1 mt-1 mr-1">
+            <button
+              type="button"
+              onClick={() => onCopy(msg.id, msg.text)}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-surface rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+              title="Copy message"
+              aria-label="Copy user message"
+            >
+              {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant message
+  const activeStatuses = isStreaming && visibleGraphStatuses.length > 0 ? visibleGraphStatuses : (msg.graphStatuses || []);
+  const activeStepLabel = isStreaming ? getActiveStepLabel(visibleGraphStatuses) : undefined;
+  const formattedMarkdown = formatAssistantMarkdown(msg.text, msg.citations);
+
+  return (
+    <div className="w-full flex flex-col">
+      <div className="w-full min-w-0">
+        <div className="min-w-0 flex-1 flex flex-col space-y-2">
+          {/* Reasoning & Thought Disclosure */}
+          <ReasoningDisclosure
+            isStreaming={isStreaming && !msg.text}
+            graphStatuses={activeStatuses}
+            toolTrace={msg.tool_trace}
+            confidence={msg.confidence}
+            telemetry={msg.telemetry}
+            activeStepLabel={activeStepLabel}
+          />
+
+          {/* Assistant markdown content */}
+          <div className="max-w-none min-w-0 text-foreground">
+            {msg.text && (
+              msg.text.startsWith("⚠️") || msg.text.includes("Stream interrupted") ? (
+                <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-foreground flex items-start gap-3 my-2 shadow-sm">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-destructive leading-relaxed">{msg.text}</p>
+                    {onRetryMessage && (
+                      <button
+                        type="button"
+                        onClick={() => onRetryMessage(msg.id, chatMode)}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border/80 hover:bg-surface-container text-xs font-semibold text-foreground transition-colors cursor-pointer shadow-sm active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-primary" />
+                        <span>Retry generation</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                    a: ({ href, children }) => {
+                      if (href?.startsWith("cite://")) {
+                        const citeIndex = parseInt(href.replace("cite://", ""), 10);
+                        const citation = msg.citations?.[citeIndex];
+                        return (
+                          <InlineCitation
+                            citation={citation}
+                            index={citeIndex}
+                            label={children}
+                            onSelect={(c) => {
+                              const name = resolveCitationName(c);
+                              setActiveCitation({ ...c, name });
+                            }}
+                          />
+                        );
+                      }
+                      return (
+                        <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 break-words">
+                          {children}
+                        </a>
+                      );
+                    },
+                    p: ({ children }) => (
+                      <p className="my-3.5 break-words text-sm leading-7 text-foreground">
+                        {children}
+                      </p>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="mt-7 mb-3 text-lg font-bold tracking-tight text-foreground">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="mt-5 mb-2 text-sm font-semibold tracking-tight text-foreground">
+                        {children}
+                      </h3>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="my-3.5 list-disc space-y-1.5 pl-6 text-sm">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="my-3.5 list-decimal space-y-1.5 pl-6 text-sm">
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="break-words pl-1 text-sm leading-6 text-foreground">
+                        {children}
+                      </li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-foreground">
+                        {children}
+                      </strong>
+                    ),
+                    code: ({ className, children, ...props }: any) => {
+                      const code = String(children).replace(/\n$/, "");
+                      const language = /language-(\w+)/.exec(className || "")?.[1];
+                      const isBlock = Boolean(className) || code.includes("\n");
+                      if (isBlock) {
+                        return <CodeBlock code={code} language={language} />;
+                      }
+                      return (
+                        <code className="rounded-md bg-surface-container border border-border px-1.5 py-0.5 text-xs font-mono font-medium text-foreground" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    pre: ({ children }) => <>{children}</>,
+                    table: ({ children }) => (
+                      <div className="my-5 w-full overflow-x-auto rounded-xl border border-border/80 bg-surface/50 shadow-sm scrollbar-thin">
+                        <table className="w-full min-w-[500px] border-collapse text-left text-xs md:text-sm">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({ children }) => (
+                      <thead className="border-b border-border bg-surface-container/70 text-foreground font-semibold">
+                        {children}
+                      </thead>
+                    ),
+                    tbody: ({ children }) => (
+                      <tbody className="divide-y divide-border/40 text-foreground/90 font-normal">
+                        {children}
+                      </tbody>
+                    ),
+                    tr: ({ children }) => (
+                      <tr className="transition-colors hover:bg-surface-container/30 even:bg-surface/20">
+                        {children}
+                      </tr>
+                    ),
+                    th: ({ children }) => (
+                      <th className="px-4 py-3 text-xs font-semibold tracking-wider text-foreground border-r border-border/40 last:border-r-0 whitespace-nowrap bg-surface-container/40">
+                        {renderTableCellContent(children)}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="px-4 py-3 text-xs md:text-sm text-foreground/90 border-r border-border/30 last:border-r-0 align-top leading-relaxed break-words">
+                        {renderTableCellContent(children)}
+                      </td>
+                    ),
+                  }}
+                >
+                  {formattedMarkdown}
+                </ReactMarkdown>
+                {isStreaming && <span className="streaming-cursor">▋</span>}
+              </>
+            ))}
+          </div>
+
+          {/* Grounding Citations Drawer */}
+          {msg.citations && msg.citations.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <button
+                type="button"
+                onClick={() => toggleMessageSources(msg.id)}
+                className={cn(
+                  "inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 motion-reduce:transform-none",
+                  expandedSources[msg.id]
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-surface hover:bg-surface-container text-muted-foreground hover:text-foreground border-border/70 hover:border-border"
+                )}
+                title={expandedSources[msg.id] ? "Collapse sources" : "View cited sources"}
+              >
+                <Layers className="w-3.5 h-3.5 text-primary" />
+                <span className="font-semibold text-foreground">
+                  {msg.citations.length} {msg.citations.length === 1 ? "Source" : "Sources"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {expandedSources[msg.id] ? "Click to hide" : "Click to view"}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "w-3.5 h-3.5 transition-transform duration-200 text-muted-foreground",
+                    expandedSources[msg.id] && "rotate-180 text-primary"
+                  )}
+                />
+              </button>
+
+              <AnimatePresence>
+                {expandedSources[msg.id] && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex flex-wrap gap-2 pt-2.5">
+                      {msg.citations.map((cite: any, cIdx: number) => {
+                        const isWeb = cite.type === "web";
+                        const name = resolveCitationName(cite);
+                        const pageNum = cite.page ?? cite.page_label ?? cite.page_number;
+                        const badge = isWeb ? "Web" : pageNum != null ? `Page ${pageNum}` : "Doc";
+                        return (
+                          <button
+                            key={cIdx}
+                            type="button"
+                            onClick={() => setActiveCitation({ ...cite, name })}
+                            className="bg-surface border border-border hover:border-primary/40 hover:bg-surface-container px-2.5 py-1 rounded-md flex items-center space-x-2 transition-colors cursor-pointer text-left group active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 motion-reduce:transform-none"
+                          >
+                            {isWeb ? (
+                              <Search className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                            ) : name.endsWith(".xlsx") || name.endsWith(".csv") ? (
+                              <FileSpreadsheet className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                            ) : (
+                              <FileText className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                            )}
+                            <span className="text-xs font-medium text-foreground truncate max-w-[140px]">
+                              {name}
+                            </span>
+                            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold">
+                              {badge}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* Assistant Message Actions Toolbar */}
+          {msg.text && (
+            <div className="flex items-center space-x-1 mt-2">
+              <button
+                type="button"
+                onClick={() => onCopy(msg.id, msg.text)}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-surface rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                title="Copy answer"
+                aria-label="Copy assistant answer"
+              >
+                {copiedId === msg.id ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback(msg.id, 'up')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
+                  feedbacks[msg.id] === 'up' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-surface"
+                )}
+                title="Accurate response"
+                aria-label="Mark accurate response"
+              >
+                <ThumbsUp className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback(msg.id, 'down')}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
+                  feedbacks[msg.id] === 'down' ? "text-danger bg-danger-subtle" : "text-muted-foreground hover:text-foreground hover:bg-surface"
+                )}
+                title="Needs improvement"
+                aria-label="Mark response needs improvement"
+              >
+                <ThumbsDown className="w-4 h-4" />
+              </button>
+              {onRetryMessage && (
+                <button
+                  type="button"
+                  onClick={() => onRetryMessage(msg.id, chatMode)}
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                  title="Regenerate response"
+                  aria-label="Regenerate response"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Context / Telemetry Badge with HoverCard breakdown */}
+              <TelemetryBadge telemetry={msg.telemetry} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}, areMessagePropsEqual);
+
+function areMessagePropsEqual(prev: MessageItemProps, next: MessageItemProps): boolean {
+  if (prev.isStreaming !== next.isStreaming) return false;
+  if (prev.isLastMessage !== next.isLastMessage) return false;
+
+  if (next.isStreaming) {
+    if (prev.msg.text !== next.msg.text) return false;
+    if (prev.visibleGraphStatuses !== next.visibleGraphStatuses) return false;
+  }
+
+  if (prev.msg !== next.msg) return false;
+
+  const msgId = next.msg.id;
+  if ((prev.copiedId === msgId) !== (next.copiedId === msgId)) return false;
+  if (prev.feedbacks[msgId] !== next.feedbacks[msgId]) return false;
+  if (Boolean(prev.expandedSources[msgId]) !== Boolean(next.expandedSources[msgId])) return false;
+  if (prev.chatMode !== next.chatMode) return false;
+
+  return true;
+}
 
 interface ChatWorkspaceProps {
   messages: Message[];
@@ -203,14 +1168,14 @@ export default function ChatWorkspace({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
 
-  const toggleMessageSources = (msgId: string) => {
+  const toggleMessageSources = useCallback((msgId: string) => {
     setExpandedSources((prev) => ({
       ...prev,
       [msgId]: !prev[msgId],
     }));
-  };
+  }, []);
 
-  const resolveCitationName = (cite: any): string => {
+  const resolveCitationName = useCallback((cite: any): string => {
     if (cite.type === "web") return cite.title || cite.url || "Web Source";
     const rawName = cite.name || cite.title || "";
     if (/^[a-f0-9]{20,}\./i.test(rawName)) {
@@ -220,7 +1185,7 @@ export default function ChatWorkspace({
       if (allDoc?.name) return allDoc.name;
     }
     return rawName || "Document";
-  };
+  }, [documents, allDocuments]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -251,11 +1216,20 @@ export default function ChatWorkspace({
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
 
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   useEffect(() => {
     if (shouldStickToBottomRef.current) {
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-      });
+      if (isProcessing) {
+        scrollRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      } else {
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        });
+      }
       setShowJumpToLatest(false);
     } else {
       setShowJumpToLatest(true);
@@ -291,7 +1265,7 @@ export default function ChatWorkspace({
     document.body.removeChild(textArea);
   };
 
-  const handleCopy = (id: string, text: string) => {
+  const handleCopy = useCallback((id: string, text: string) => {
     const cleaned = cleanMessageText(text);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(cleaned)
@@ -305,10 +1279,10 @@ export default function ChatWorkspace({
     } else {
       fallbackCopyText(id, cleaned);
     }
-  };
+  }, []);
 
-  const handleFeedback = (id: string, type: 'up' | 'down') => {
-    const msg = messages.find(m => m.id === id);
+  const handleFeedback = useCallback((id: string, type: 'up' | 'down') => {
+    const msg = messagesRef.current.find(m => m.id === id);
     if (!msg) return;
     if (!msg.dbId) {
       return;
@@ -319,7 +1293,7 @@ export default function ChatWorkspace({
       rating: type === 'up' ? 5 : 2,
       type
     });
-  };
+  }, []);
 
   const handleFeedbackSubmit = async (rating: number, comment: string) => {
     if (!activeFeedbackMsg) return;
@@ -345,7 +1319,7 @@ export default function ChatWorkspace({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit();
     }
@@ -368,7 +1342,7 @@ export default function ChatWorkspace({
     }
     onAddDocument(file);
     const tempAttachment: SourceDocument = {
-      id: `prompt-attach-${Date.now()}-${file.name}`,
+      id: `prompt-attach-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${file.name}`,
       name: file.name,
       size: `${(file.size / 1024).toFixed(0)} KB`,
       type: ext === '.csv' || ext === '.xlsx' ? 'spreadsheet' : 'pdf',
@@ -386,9 +1360,9 @@ export default function ChatWorkspace({
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleDirectAttachFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      Array.from(files).forEach((file) => handleDirectAttachFile(file));
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -448,7 +1422,8 @@ export default function ChatWorkspace({
         <div
           ref={chatScrollRef}
           onScroll={handleChatScroll}
-          className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-10 pt-6 pb-4 flex flex-col items-center min-h-0"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-10 pt-6 pb-4 flex flex-col items-center min-h-0 [overflow-anchor:auto]"
+          style={{ overflowAnchor: "auto" }}
         >
           <div className={cn("w-full min-w-0 space-y-10", isInspectorOpen ? "max-w-3xl" : "max-w-4xl")}>
             
@@ -522,266 +1497,30 @@ export default function ChatWorkspace({
                 const isLastMessage = index === messages.length - 1;
                 const isStreaming = isProcessing && isLastMessage && msg.sender === "assistant";
 
-                // When assistant message has no text yet, the pipeline execution node below handles the loading indicator
-                if (msg.sender === "assistant" && !msg.text) {
-                  return null;
-                }
-
                 return (
-                  <div key={msg.id} className="w-full flex flex-col">
-                    {msg.sender === "user" ? (
-                      <div className="flex flex-col items-end w-full">
-                        <div className="max-w-[85%] rounded-2xl bg-surface-container border border-border/80 px-4 py-3 text-sm text-foreground">
-                          <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                        </div>
-                        <div className="flex items-center gap-1 mt-1 mr-1">
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(msg.id, msg.text)}
-                            className="p-1 text-muted-foreground hover:text-foreground hover:bg-surface rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
-                            title="Copy message"
-                            aria-label="Copy user message"
-                          >
-                            {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full min-w-0">
-                        <div className="min-w-0 flex-1 flex flex-col space-y-2">
-                          <div className="max-w-none min-w-0 text-foreground">
-                            {msg.text && (
-                              <>
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  components={{
-                                    a: ({ href, children }) => (
-                                      <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 break-words">
-                                        {children}
-                                      </a>
-                                    ),
-                                    p: ({ children }) => (
-                                      <p className="my-3.5 break-words text-sm leading-7 text-foreground">
-                                        {children}
-                                      </p>
-                                    ),
-                                    h2: ({ children }) => (
-                                      <h2 className="mt-7 mb-3 text-lg font-bold tracking-tight text-foreground">
-                                        {children}
-                                      </h2>
-                                    ),
-                                    h3: ({ children }) => (
-                                      <h3 className="mt-5 mb-2 text-sm font-semibold tracking-tight text-foreground">
-                                        {children}
-                                      </h3>
-                                    ),
-                                    ul: ({ children }) => (
-                                      <ul className="my-3.5 list-disc space-y-1.5 pl-6 text-sm">
-                                        {children}
-                                      </ul>
-                                    ),
-                                    ol: ({ children }) => (
-                                      <ol className="my-3.5 list-decimal space-y-1.5 pl-6 text-sm">
-                                        {children}
-                                      </ol>
-                                    ),
-                                    li: ({ children }) => (
-                                      <li className="break-words pl-1 text-sm leading-6 text-foreground">
-                                        {children}
-                                      </li>
-                                    ),
-                                    strong: ({ children }) => (
-                                      <strong className="font-semibold text-foreground">
-                                        {children}
-                                      </strong>
-                                    ),
-                                    code: ({ className, children, ...props }: any) => {
-                                      const code = String(children).replace(/\n$/, "");
-                                      const language = /language-(\w+)/.exec(className || "")?.[1];
-                                      const isBlock = Boolean(className) || code.includes("\n");
-                                      if (isBlock) {
-                                        return <CodeBlock code={code} language={language} />;
-                                      }
-                                      return (
-                                        <code className="rounded-md bg-surface-container border border-border px-1.5 py-0.5 text-xs font-mono font-medium text-foreground" {...props}>
-                                          {children}
-                                        </code>
-                                      );
-                                    },
-                                    pre: ({ children }) => <>{children}</>,
-                                    table: ({ children }) => (
-                                      <div className="my-5 w-full overflow-x-auto rounded-xl border border-border/80 bg-surface/50 shadow-sm scrollbar-thin">
-                                        <table className="w-full min-w-[500px] border-collapse text-left text-xs md:text-sm">
-                                          {children}
-                                        </table>
-                                      </div>
-                                    ),
-                                    thead: ({ children }) => (
-                                      <thead className="border-b border-border bg-surface-container/70 text-foreground font-semibold">
-                                        {children}
-                                      </thead>
-                                    ),
-                                    tbody: ({ children }) => (
-                                      <tbody className="divide-y divide-border/40 text-foreground/90 font-normal">
-                                        {children}
-                                      </tbody>
-                                    ),
-                                    tr: ({ children }) => (
-                                      <tr className="transition-colors hover:bg-surface-container/30 even:bg-surface/20">
-                                        {children}
-                                      </tr>
-                                    ),
-                                    th: ({ children }) => (
-                                      <th className="px-4 py-3 text-xs font-semibold tracking-wider text-foreground border-r border-border/40 last:border-r-0 whitespace-nowrap bg-surface-container/40">
-                                        {renderTableCellContent(children)}
-                                      </th>
-                                    ),
-                                    td: ({ children }) => (
-                                      <td className="px-4 py-3 text-xs md:text-sm text-foreground/90 border-r border-border/30 last:border-r-0 align-top leading-relaxed break-words">
-                                        {renderTableCellContent(children)}
-                                      </td>
-                                    ),
-                                  }}
-                                >
-                                  {formatAssistantMarkdown(msg.text)}
-                                </ReactMarkdown>
-                                {isStreaming && <span className="streaming-cursor">▋</span>}
-                              </>
-                            )}
-                          </div>
-                        
-                          {/* Grounding Citations Drawer */}
-                          {msg.citations && msg.citations.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-border/50">
-                              <button
-                                type="button"
-                                onClick={() => toggleMessageSources(msg.id)}
-                                className={cn(
-                                  "inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 motion-reduce:transform-none",
-                                  expandedSources[msg.id]
-                                    ? "bg-primary/10 text-primary border-primary/30"
-                                    : "bg-surface hover:bg-surface-container text-muted-foreground hover:text-foreground border-border/70 hover:border-border"
-                                )}
-                                title={expandedSources[msg.id] ? "Collapse sources" : "View cited sources"}
-                              >
-                                <Layers className="w-3.5 h-3.5 text-primary" />
-                                <span className="font-semibold text-foreground">
-                                  {msg.citations.length} {msg.citations.length === 1 ? "Source" : "Sources"}
-                                </span>
-                                <span className="text-[11px] text-muted-foreground">
-                                  {expandedSources[msg.id] ? "Click to hide" : "Click to view"}
-                                </span>
-                                <ChevronDown
-                                  className={cn(
-                                    "w-3.5 h-3.5 transition-transform duration-200 text-muted-foreground",
-                                    expandedSources[msg.id] && "rotate-180 text-primary"
-                                  )}
-                                />
-                              </button>
-
-                              <AnimatePresence>
-                                {expandedSources[msg.id] && (
-                                  <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: "auto" }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.18, ease: "easeOut" }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div className="flex flex-wrap gap-2 pt-2.5">
-                                      {msg.citations.map((cite: any, cIdx) => {
-                                        const isWeb = cite.type === "web";
-                                        const name = resolveCitationName(cite);
-                                        const pageNum = cite.page ?? cite.page_label ?? cite.page_number;
-                                        const badge = isWeb ? "Web" : pageNum != null ? `Page ${pageNum}` : "Doc";
-                                        return (
-                                          <button
-                                            key={cIdx}
-                                            type="button"
-                                            onClick={() => setActiveCitation({ ...cite, name })}
-                                            className="bg-surface border border-border hover:border-primary/40 hover:bg-surface-container px-2.5 py-1 rounded-md flex items-center space-x-2 transition-colors cursor-pointer text-left group active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 motion-reduce:transform-none"
-                                          >
-                                            {isWeb ? (
-                                              <Search className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
-                                            ) : name.endsWith(".xlsx") || name.endsWith(".csv") ? (
-                                              <FileSpreadsheet className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
-                                            ) : (
-                                              <FileText className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
-                                            )}
-                                            <span className="text-xs font-medium text-foreground truncate max-w-[140px]">
-                                              {name}
-                                            </span>
-                                            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold">
-                                              {badge}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          )}
-
-                          {/* Assistant Message Actions Toolbar */}
-                          {msg.text && (
-                            <div className="flex items-center space-x-1 mt-2">
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(msg.id, msg.text)}
-                                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-surface rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
-                                title="Copy answer"
-                                aria-label="Copy assistant answer"
-                              >
-                                {copiedId === msg.id ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleFeedback(msg.id, 'up')}
-                                className={cn(
-                                  "p-1.5 rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
-                                  feedbacks[msg.id] === 'up' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-surface"
-                                )}
-                                title="Accurate response"
-                                aria-label="Mark accurate response"
-                              >
-                                <ThumbsUp className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleFeedback(msg.id, 'down')}
-                                className={cn(
-                                  "p-1.5 rounded-md transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40",
-                                  feedbacks[msg.id] === 'down' ? "text-danger bg-danger-subtle" : "text-muted-foreground hover:text-foreground hover:bg-surface"
-                                )}
-                                title="Needs improvement"
-                                aria-label="Mark response needs improvement"
-                              >
-                                <ThumbsDown className="w-4 h-4" />
-                              </button>
-                              {onRetryMessage && (
-                                <button
-                                  type="button"
-                                  onClick={() => onRetryMessage(msg.id, chatMode)}
-                                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
-                                  title="Regenerate response"
-                                  aria-label="Regenerate response"
-                                >
-                                  <RotateCcw className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <MessageItem
+                    key={msg.id}
+                    msg={msg}
+                    index={index}
+                    isLastMessage={isLastMessage}
+                    isStreaming={isStreaming}
+                    copiedId={copiedId}
+                    feedbacks={feedbacks}
+                    expandedSources={expandedSources}
+                    chatMode={chatMode}
+                    onCopy={handleCopy}
+                    onFeedback={handleFeedback}
+                    onRetryMessage={onRetryMessage}
+                    toggleMessageSources={toggleMessageSources}
+                    setActiveCitation={setActiveCitation}
+                    resolveCitationName={resolveCitationName}
+                    visibleGraphStatuses={visibleGraphStatuses}
+                  />
                 );
               })}
 
-              {/* Active AI Processing Indicator with Shimmer Step */}
-              {isProcessing && (
+              {/* Active AI Processing Indicator with Shimmer Step if no assistant message is yet in state */}
+              {isProcessing && (!messages.length || messages[messages.length - 1].sender === "user") && (
                 <motion.div
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1032,6 +1771,7 @@ export default function ChatWorkspace({
         onChange={handleFileUpload}
         className="hidden"
         accept=".pdf,.txt,.md,.docx"
+        multiple
       />
 
       {/* Citation Detail Modal */}

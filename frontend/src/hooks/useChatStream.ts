@@ -46,6 +46,7 @@ export function useChatStream({
         const metadata = m.meta_data || {};
         const sources = m.citations || metadata.sources || [];
         const mappedSources = mapSourcesToCitations(sources);
+        const debug = m.debug || {};
 
         return {
           id: m.message_id ? String(m.message_id) : (m.id ? `db-${m.id}` : `msg-${m.created_at}-${idx}`),
@@ -55,6 +56,9 @@ export function useChatStream({
           timestamp: m.created_at || new Date().toISOString(),
           citations: mappedSources.length > 0 ? mappedSources : undefined,
           chunks: m.chunks || metadata.chunks || undefined,
+          confidence: m.confidence !== undefined ? m.confidence : undefined,
+          tool_trace: m.tool_used ? m.tool_used.split(" -> ") : (debug.tool_trace || undefined),
+          telemetry: debug.telemetry || undefined,
         };
       });
     },
@@ -89,6 +93,10 @@ export function useChatStream({
       citations: activeStream.citations.length > 0 ? activeStream.citations : undefined,
       chunks: activeStream.chunks,
       isProcessing: true,
+      graphStatuses: activeStream.graphStatuses,
+      tool_trace: activeStream.toolTrace,
+      confidence: activeStream.confidence,
+      telemetry: activeStream.telemetry,
     };
     msgs.push(botMsg);
 
@@ -211,6 +219,55 @@ export function useChatStream({
     let finalCitations: Citation[] = [];
     let finalChunks: any = undefined;
     let finalMessageId: number | undefined = undefined;
+    let finalToolTrace: string[] | undefined = undefined;
+    let finalConfidence: number | undefined = undefined;
+    let finalTelemetry: any = undefined;
+    let finalGraphStatuses: any[] = [{ node: "main_router", label: "Deciding route", status: "running" }];
+
+    // 60 FPS Token Batching using requestAnimationFrame to prevent 100Hz render thrashing
+    let pendingTokens = false;
+    let rafId: number | null = null;
+
+    const flushTokens = () => {
+      rafId = null;
+      if (!pendingTokens) return;
+      pendingTokens = false;
+      updateSessionStream(finalConvId, (prev) => {
+        if (prev.currentText === currentText) return prev;
+        return {
+          ...prev,
+          currentText,
+        };
+      });
+    };
+
+    const scheduleTokenUpdate = () => {
+      pendingTokens = true;
+      if (rafId === null) {
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+          rafId = window.requestAnimationFrame(flushTokens);
+        } else {
+          flushTokens();
+        }
+      }
+    };
+
+    const drainTokens = () => {
+      if (rafId !== null) {
+        if (typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(rafId);
+        }
+        rafId = null;
+      }
+      pendingTokens = false;
+      updateSessionStream(finalConvId, (prev) => {
+        if (prev.currentText === currentText) return prev;
+        return {
+          ...prev,
+          currentText,
+        };
+      });
+    };
 
     try {
       const res = await api.streamChat(finalConvId, text, mode, abortController.signal);
@@ -289,11 +346,9 @@ export function useChatStream({
             if (currentEvent === "token") {
               const tokenText = dataStr === "" ? "\n" : dataStr;
               currentText += tokenText;
-              updateSessionStream(finalConvId, (prev) => ({
-                ...prev,
-                currentText: prev.currentText + tokenText,
-              }));
+              scheduleTokenUpdate();
             } else if (currentEvent === "answer") {
+              drainTokens();
               try {
                 currentText = JSON.parse(dataStr);
               } catch {
@@ -311,24 +366,33 @@ export function useChatStream({
                   const nextStatuses = existingIdx === -1
                     ? [...prev.graphStatuses, status]
                     : prev.graphStatuses.map((item: any, idx) => (idx === existingIdx ? { ...item, ...status } : item));
+                  finalGraphStatuses = nextStatuses;
                   return { ...prev, graphStatuses: nextStatuses };
                 });
               } catch (e) {}
             } else if (currentEvent === "metadata") {
+              drainTokens();
               try {
                 const data = JSON.parse(dataStr);
                 const mappedSources = mapSourcesToCitations(data.sources);
                 finalCitations = mappedSources;
                 finalChunks = data.chunks || undefined;
                 finalMessageId = data.message_id || undefined;
+                finalToolTrace = data.tool_trace || undefined;
+                finalConfidence = data.confidence !== undefined ? data.confidence : undefined;
+                finalTelemetry = data.llm_telemetry || undefined;
                 updateSessionStream(finalConvId, (prev) => ({
                   ...prev,
                   citations: mappedSources,
                   chunks: data.chunks || undefined,
                   finalMessageId: data.message_id || undefined,
+                  toolTrace: data.tool_trace || prev.toolTrace,
+                  confidence: data.confidence !== undefined ? data.confidence : prev.confidence,
+                  telemetry: data.llm_telemetry || prev.telemetry,
                 }));
               } catch (e) {}
             } else if (currentEvent === "rate_limit") {
+              drainTokens();
               const rateLimitMsg = dataStr || "⏳ **Rate Limited** — The AI provider is busy. Please wait a moment and try again.";
               currentText = rateLimitMsg;
               updateSessionStream(finalConvId, (prev) => ({
@@ -342,6 +406,7 @@ export function useChatStream({
               shouldTerminate = true;
               break;
             } else if (currentEvent === "error") {
+              drainTokens();
               const errMsg = dataStr ? `⚠️ **Error** — ${dataStr}` : "⚠️ **Error** — Something went wrong. Please try again.";
               currentText = errMsg;
               updateSessionStream(finalConvId, (prev) => ({
@@ -359,11 +424,13 @@ export function useChatStream({
         }
 
         if (shouldTerminate) {
+          drainTokens();
           await reader.cancel().catch(() => {});
           break;
         }
       }
     } catch (error: any) {
+      drainTokens();
       if (error?.name === "AbortError") {
         return;
       }
@@ -379,6 +446,7 @@ export function useChatStream({
         ),
       }));
     } finally {
+      drainTokens();
       const activeStreamSnapshot = useStore.getState().streamingSessions[finalConvId];
       const savedText =
         activeStreamSnapshot?.currentText ||
@@ -387,6 +455,13 @@ export function useChatStream({
       const savedCitations = activeStreamSnapshot?.citations || finalCitations;
       const savedChunks = activeStreamSnapshot?.chunks || finalChunks;
       const savedDbId = activeStreamSnapshot?.finalMessageId || finalMessageId;
+      const rawStatuses = activeStreamSnapshot?.graphStatuses || finalGraphStatuses || [];
+      const savedStatuses = rawStatuses.map((s: any) =>
+        s.status === "running" ? { ...s, status: "completed" } : s
+      );
+      const savedToolTrace = activeStreamSnapshot?.toolTrace || finalToolTrace;
+      const savedConfidence = activeStreamSnapshot?.confidence ?? finalConfidence;
+      const savedTelemetry = activeStreamSnapshot?.telemetry || finalTelemetry;
 
       // Unregister stream from global store
       setSessionStream(finalConvId, null);
@@ -399,6 +474,10 @@ export function useChatStream({
         timestamp: new Date().toISOString(),
         citations: savedCitations,
         chunks: savedChunks,
+        graphStatuses: savedStatuses && savedStatuses.length > 0 ? savedStatuses : undefined,
+        tool_trace: savedToolTrace,
+        confidence: savedConfidence,
+        telemetry: savedTelemetry,
       };
 
       // Seed query cache with optimistic full conversation history
@@ -410,7 +489,10 @@ export function useChatStream({
       });
 
       // Refetch and sync React Query caches
-      queryClient.invalidateQueries({ queryKey: ["sessionHistory", finalConvId] });
+      // If error occurred before DB save, keep the error message in cache so it shows in chat
+      if (savedDbId || !savedText.startsWith("⚠️")) {
+        queryClient.invalidateQueries({ queryKey: ["sessionHistory", finalConvId] });
+      }
       queryClient.invalidateQueries({ queryKey: ["sidebar-sessions"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["user-activity"] });

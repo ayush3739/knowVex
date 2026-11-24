@@ -2,6 +2,7 @@ from uuid import UUID
 from typing import AsyncGenerator
 import json
 import logging
+import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,8 @@ class ChatService:
         db: AsyncSession,
         mode :str = "auto",
     ) -> AsyncGenerator[tuple[str, object], None]:
+
+        start_time = time.perf_counter()
 
         # 1. Validate session and initialize chat
         try:
@@ -214,6 +217,30 @@ class ChatService:
         chunks = result.get("chunks", [])
         retrieved_chunks = result.get("retrieved_chunks", [])
 
+        telemetry = dict(LLMProvider.get_last_telemetry() or {})
+        if not telemetry.get("prompt_tokens"):
+            p_chars = len(question) + sum(len(c.get("content", "")) for c in chunks)
+            telemetry["prompt_tokens"] = max(1, p_chars // 4)
+        if not telemetry.get("completion_tokens"):
+            telemetry["completion_tokens"] = max(1, len(full_response) // 4)
+        if not telemetry.get("total_tokens"):
+            telemetry["total_tokens"] = telemetry.get("prompt_tokens", 0) + telemetry.get("completion_tokens", 0)
+        if not telemetry.get("latency") and telemetry.get("latency_ms"):
+            telemetry["latency"] = round(telemetry["latency_ms"] / 1000, 2)
+        if not telemetry.get("latency"):
+            telemetry["latency"] = round(time.perf_counter() - start_time, 2)
+            telemetry["latency_ms"] = round(telemetry["latency"] * 1000)
+        if not telemetry.get("provider"):
+            telemetry["provider"] = "knowvex-orchestrator"
+
+        debug_payload = {
+            "tool_trace": tool_trace,
+            "routing_reason": routing_reason,
+            "telemetry": telemetry,
+            "chunks_found": len(chunks),
+            "used_vector_db": used_vector_db,
+        }
+
         message_id = None
         try:
             msg_res = await self.session_service.add_message(
@@ -224,6 +251,7 @@ class ChatService:
                 confidence=stored_confidence,
                 sources=sources,
                 tool_used=" -> ".join(tool_trace) if tool_trace else None,
+                debug=debug_payload,
             )
             message_id = msg_res.message_id
         except Exception as exc:
@@ -245,7 +273,7 @@ class ChatService:
                 "chunks": retrieved_chunks,
                 "tool_trace": tool_trace,
                 "routing_reason": routing_reason,
-                "llm_telemetry": LLMProvider.get_last_telemetry(),
+                "llm_telemetry": telemetry,
             }),
         )
 

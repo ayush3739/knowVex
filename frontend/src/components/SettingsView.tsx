@@ -129,6 +129,8 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
   const logout = () => { api.logout(); };
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
+  const showConfidence = useStore(s => s.showConfidence);
+  const setShowConfidence = useStore(s => s.setShowConfidence);
 
   const role = (user?.role || "user").toLowerCase();
   const isAdmin = role === "admin";
@@ -472,9 +474,15 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
                 <SettingsRow
                   label="Inspector auto-open"
                   desc="Automatically slide open the context inspector when streaming begins."
-                  last
                 >
                   <Toggle checked={inspectorOpen} onChange={(v) => { setInspectorOpen(v); localStorage.setItem("setting_inspector_open", String(v)); }} />
+                </SettingsRow>
+                <SettingsRow
+                  label="Show grounding confidence"
+                  desc="Display the retrieval verification percentage (e.g. 70% Confidence) in the thought disclosure dropdown."
+                  last
+                >
+                  <Toggle checked={showConfidence} onChange={(v) => setShowConfidence(v)} />
                 </SettingsRow>
               </div>
             )}

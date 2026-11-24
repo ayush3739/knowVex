@@ -31,6 +31,18 @@ export interface Citation {
   url?: string;
 }
 
+export interface MessageTelemetry {
+  provider?: string;
+  task?: string;
+  failover_count?: number;
+  latency_ms?: number;
+  latency?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  [key: string]: any;
+}
+
 export interface Message {
   id: string;
   dbId?: number;
@@ -40,6 +52,10 @@ export interface Message {
   citations?: Citation[];
   chunks?: unknown;
   isProcessing?: boolean;
+  graphStatuses?: any[];
+  tool_trace?: string[];
+  confidence?: number;
+  telemetry?: MessageTelemetry;
 }
 
 export interface Conversation {

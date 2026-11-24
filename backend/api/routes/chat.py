@@ -45,6 +45,19 @@ async def chat(
                     "data": data,
                 }
         except Exception as stream_exc:
+            error_text = f"⚠️ Stream interrupted: {stream_exc}"
+            try:
+                await session_service.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=error_text,
+                    db=db,
+                    confidence=0.0,
+                    sources=[],
+                    tool_used="error",
+                )
+            except Exception:
+                pass
             yield {
                 "event": "graph_status",
                 "data": json.dumps({

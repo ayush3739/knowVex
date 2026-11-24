@@ -131,6 +131,8 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
   const setTheme = useStore(s => s.setTheme);
   const showConfidence = useStore(s => s.showConfidence);
   const setShowConfidence = useStore(s => s.setShowConfidence);
+  const showTelemetry = useStore(s => s.showTelemetry);
+  const setShowTelemetry = useStore(s => s.setShowTelemetry);
 
   const role = (user?.role || "user").toLowerCase();
   const isAdmin = role === "admin";
@@ -479,10 +481,16 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
                 </SettingsRow>
                 <SettingsRow
                   label="Show grounding confidence"
-                  desc="Display the retrieval verification percentage (e.g. 70% Confidence) in the thought disclosure dropdown."
-                  last
+                  desc="Display the retrieval verification percentage (e.g. 70% Confidence) in the thought disclosure for RAG and Web queries."
                 >
                   <Toggle checked={showConfidence} onChange={(v) => setShowConfidence(v)} />
+                </SettingsRow>
+                <SettingsRow
+                  label="Show inference telemetry"
+                  desc="Display token usage and latency metrics at the bottom of assistant responses."
+                  last
+                >
+                  <Toggle checked={showTelemetry} onChange={(v) => setShowTelemetry(v)} />
                 </SettingsRow>
               </div>
             )}

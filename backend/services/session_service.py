@@ -104,7 +104,20 @@ class SessionService:
                     content=m.content,
                     citations=m.citations,
                     chunks=m.chunks,
-                    confidence=m.confidence,
+                    confidence=(
+                        round(float(m.confidence), 4)
+                        if (
+                            m.confidence is not None
+                            and m.confidence > 0.0
+                            and (
+                                bool(m.citations)
+                                or bool(m.used_vector_db)
+                                or (bool(m.tool_used) and "direct" not in m.tool_used.lower())
+                                or (bool(m.debug and m.debug.get("tool_trace")) and not any("direct" in str(t).lower() for t in m.debug.get("tool_trace", [])))
+                            )
+                        )
+                        else None
+                    ),
                     tool_used=m.tool_used,
                     used_vector_db=m.used_vector_db,
                     debug=m.debug,
@@ -142,7 +155,20 @@ class SessionService:
                     content=m.content,
                     citations=m.citations,
                     chunks=m.chunks,
-                    confidence=m.confidence,
+                    confidence=(
+                        round(float(m.confidence), 4)
+                        if (
+                            m.confidence is not None
+                            and m.confidence > 0.0
+                            and (
+                                bool(m.citations)
+                                or bool(m.used_vector_db)
+                                or (bool(m.tool_used) and "direct" not in m.tool_used.lower())
+                                or (bool(m.debug and m.debug.get("tool_trace")) and not any("direct" in str(t).lower() for t in m.debug.get("tool_trace", [])))
+                            )
+                        )
+                        else None
+                    ),
                     tool_used=m.tool_used,
                     used_vector_db=m.used_vector_db,
                     debug=m.debug,

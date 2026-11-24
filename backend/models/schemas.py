@@ -110,7 +110,7 @@ class MessageItem(BaseModel):
     content : str
     citations : Optional[dict]
     chunks : Optional[dict]
-    confidence : float
+    confidence : Optional[float] = None
     tool_used : Optional[str]
     used_vector_db : Optional[bool]
     debug : Optional[dict] = None

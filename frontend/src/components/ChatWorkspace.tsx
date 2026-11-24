@@ -425,6 +425,7 @@ export function InlineCitation({ citation, index, label, onSelect }: InlineCitat
 // Telemetry Badge with Glassmorphic HoverCard Breakdown
 // ---------------------------------------------------------------------------
 export function TelemetryBadge({ telemetry }: { telemetry?: MessageTelemetry }) {
+  const showTelemetry = useStore((s) => s.showTelemetry);
   const [isHovered, setIsHovered] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; placeAbove: boolean } | null>(null);
   const badgeRef = useRef<HTMLButtonElement | null>(null);
@@ -442,7 +443,7 @@ export function TelemetryBadge({ telemetry }: { telemetry?: MessageTelemetry }) 
     };
   }, [isHovered]);
 
-  if (!telemetry) return null;
+  if (!showTelemetry || !telemetry) return null;
 
   const totalTokens = telemetry.total_tokens || ((telemetry.prompt_tokens || 0) + (telemetry.completion_tokens || 0));
   const latency = telemetry.latency ?? (telemetry.latency_ms ? telemetry.latency_ms / 1000 : null);
@@ -581,6 +582,7 @@ interface ReasoningDisclosureProps {
   confidence?: number;
   telemetry?: MessageTelemetry;
   activeStepLabel?: string;
+  hasRetrieval?: boolean;
 }
 
 export function ReasoningDisclosure({
@@ -590,6 +592,7 @@ export function ReasoningDisclosure({
   confidence,
   telemetry,
   activeStepLabel,
+  hasRetrieval,
 }: ReasoningDisclosureProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const showConfidence = useStore((s) => s.showConfidence);
@@ -624,7 +627,22 @@ export function ReasoningDisclosure({
     ? toolTrace.map((node) => ({ node, label: node.replace(/_/g, " "), status: "completed" }))
     : [];
 
-  if (steps.length === 0 && confidence === undefined && (!toolTrace || toolTrace.length === 0)) {
+  const isRetrievalResponse = Boolean(
+    hasRetrieval ||
+    (toolTrace && toolTrace.some(t => /search|retriev|document|rag|web/i.test(t) && !/direct/i.test(t))) ||
+    (graphStatuses && graphStatuses.some(s => /search|retriev|document|rag|web/i.test(s.node || s.label || "") && !/direct/i.test(s.node || s.label || ""))) ||
+    (steps && steps.some((s: any) => (s.chunks_found && s.chunks_found > 0) || (s.results_found && s.results_found > 0)))
+  );
+
+  const shouldShowConfidence = Boolean(
+    showConfidence &&
+    isRetrievalResponse &&
+    confidence !== undefined &&
+    confidence !== null &&
+    confidence > 0
+  );
+
+  if (steps.length === 0 && !shouldShowConfidence && (!toolTrace || toolTrace.length === 0)) {
     return null;
   }
 
@@ -659,20 +677,20 @@ export function ReasoningDisclosure({
             className="overflow-hidden my-2"
           >
             <div className="space-y-1.5 py-1 text-xs text-muted-foreground">
-              {showConfidence && confidence !== undefined && (
+              {shouldShowConfidence && (
                 <div className="flex items-center gap-1.5 text-[11px] pb-0.5">
                   <span className="text-muted-foreground">Confidence:</span>
                   <span
                     className={cn(
                       "font-mono font-medium",
-                      confidence >= 0.8
+                      confidence! >= 0.8
                         ? "text-emerald-500"
-                        : confidence >= 0.5
+                        : confidence! >= 0.5
                         ? "text-amber-500"
                         : "text-muted-foreground"
                     )}
                   >
-                    {Math.round(confidence <= 1 ? confidence * 100 : confidence)}%
+                    {Math.round(confidence! <= 1 ? confidence! * 100 : confidence!)}%
                   </span>
                 </div>
               )}
@@ -831,6 +849,12 @@ export const MessageItem = React.memo(function MessageItem({
             confidence={msg.confidence}
             telemetry={msg.telemetry}
             activeStepLabel={activeStepLabel}
+            hasRetrieval={Boolean(
+              (msg.citations && msg.citations.length > 0) ||
+              (msg as any).used_vector_db ||
+              (msg.tool_trace && msg.tool_trace.some(t => /search|retriev|document|rag|web/i.test(t) && !/direct/i.test(t))) ||
+              (activeStatuses && activeStatuses.some(s => /search|retriev|document|rag|web/i.test(s.node || s.label || "") && !/direct/i.test(s.node || s.label || "")))
+            )}
           />
 
           {/* Assistant markdown content */}

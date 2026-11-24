@@ -76,6 +76,8 @@ interface AppState {
   setLogoVariant: (variant: LogoVariant) => void;
   showConfidence: boolean;
   setShowConfidence: (show: boolean) => void;
+  showTelemetry: boolean;
+  setShowTelemetry: (show: boolean) => void;
   logout: () => void;
 }
 
@@ -107,6 +109,8 @@ export const useStore = create<AppState>()(
       setLogoVariant: (logoVariant) => set({ logoVariant }),
       showConfidence: true,
       setShowConfidence: (showConfidence) => set({ showConfidence }),
+      showTelemetry: true,
+      setShowTelemetry: (showTelemetry) => set({ showTelemetry }),
       logout: () => set({
         accessToken: null,
         refreshToken: null,
@@ -191,6 +195,7 @@ export const useStore = create<AppState>()(
         user: state.user,
         params: state.params,
         showConfidence: state.showConfidence,
+        showTelemetry: state.showTelemetry,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

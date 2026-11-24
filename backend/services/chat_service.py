@@ -261,11 +261,23 @@ class ChatService:
 
         # 10. Metadata
 
+        has_retrieval = bool(
+            sources
+            or used_vector_db
+            or (chunks and len(chunks) > 0)
+            or (tool_trace and not any("direct" in str(t).lower() for t in tool_trace))
+        )
+        client_confidence = (
+            confidence
+            if (has_retrieval and confidence is not None and confidence > 0.0)
+            else None
+        )
+
         yield (
             "metadata",
             json.dumps({
                 "message_id": message_id,
-                "confidence": confidence,
+                "confidence": client_confidence,
                 "documents": document_ids,
                 "chunks_found": len(chunks),
                 "used_vector_db": used_vector_db,

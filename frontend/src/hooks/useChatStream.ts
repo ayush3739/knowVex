@@ -56,7 +56,7 @@ export function useChatStream({
           timestamp: m.created_at || new Date().toISOString(),
           citations: mappedSources.length > 0 ? mappedSources : undefined,
           chunks: m.chunks || metadata.chunks || undefined,
-          confidence: m.confidence !== undefined ? m.confidence : undefined,
+          confidence: (m.confidence !== undefined && m.confidence !== null && m.confidence > 0) ? m.confidence : undefined,
           tool_trace: m.tool_used ? m.tool_used.split(" -> ") : (debug.tool_trace || undefined),
           telemetry: debug.telemetry || undefined,
         };
@@ -379,7 +379,7 @@ export function useChatStream({
                 finalChunks = data.chunks || undefined;
                 finalMessageId = data.message_id || undefined;
                 finalToolTrace = data.tool_trace || undefined;
-                finalConfidence = data.confidence !== undefined ? data.confidence : undefined;
+                finalConfidence = (data.confidence !== undefined && data.confidence !== null && data.confidence > 0) ? data.confidence : undefined;
                 finalTelemetry = data.llm_telemetry || undefined;
                 updateSessionStream(finalConvId, (prev) => ({
                   ...prev,
@@ -387,7 +387,7 @@ export function useChatStream({
                   chunks: data.chunks || undefined,
                   finalMessageId: data.message_id || undefined,
                   toolTrace: data.tool_trace || prev.toolTrace,
-                  confidence: data.confidence !== undefined ? data.confidence : prev.confidence,
+                  confidence: (data.confidence !== undefined && data.confidence !== null && data.confidence > 0) ? data.confidence : prev.confidence,
                   telemetry: data.llm_telemetry || prev.telemetry,
                 }));
               } catch (e) {}

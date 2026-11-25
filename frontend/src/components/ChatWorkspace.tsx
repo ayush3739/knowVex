@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Message, SourceDocument, Citation, MessageTelemetry } from "../types";
 import { 
   Paperclip, FileText, FileSpreadsheet, 
-  PanelRightClose, PanelRightOpen, BrainCircuit, Layers, Settings2, 
+  PanelRightClose, PanelRightOpen, Layers, Settings2, 
   CheckCircle2, Search, ArrowRight, ArrowDown, Plus, Loader2, AlertTriangle, X,
   Copy, ThumbsUp, ThumbsDown, Check, RotateCcw, ChevronDown, Database,
   Quote, ExternalLink, Activity, Cpu, AlertCircle
@@ -654,15 +654,14 @@ export function ReasoningDisclosure({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="inline-flex items-center gap-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none group"
+        className="inline-flex items-center gap-1 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none group"
         title={isExpanded ? "Collapse thought process" : "View thought process"}
       >
-        <BrainCircuit className="w-3.5 h-3.5 text-primary group-hover:scale-110 transition-transform" />
         <span>{summaryLabel}</span>
         <ChevronDown
           className={cn(
-            "w-3 h-3 text-muted-foreground transition-transform duration-200",
-            isExpanded && "rotate-180 text-primary"
+            "w-3.5 h-3.5 text-muted-foreground/80 group-hover:text-foreground transition-transform duration-200",
+            isExpanded && "rotate-180 text-foreground"
           )}
         />
       </button>
@@ -1630,7 +1629,7 @@ export default function ChatWorkspace({
           >
             <div className="h-14 border-b border-border flex items-center px-4 bg-surface-container-lowest shrink-0">
               <h3 className="font-semibold text-xs text-foreground flex items-center">
-                <BrainCircuit className="w-4 h-4 mr-2 text-primary" />
+                <Layers className="w-4 h-4 mr-2 text-foreground/80" />
                 Knowledge Context Inspector
               </h3>
               <button 

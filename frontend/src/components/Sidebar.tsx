@@ -476,9 +476,11 @@ export default function Sidebar({
               >
                 <MessageSquare className="w-4 h-4" />
                 {Object.keys(streamingSessions).length > 0 ? (
-                  <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-primary animate-ping" title="Response generating..." />
+                  <span className="absolute right-1.5 top-1.5 inline-flex items-center justify-center" title="Response generating...">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin text-foreground/80" />
+                  </span>
                 ) : conversationsCount > 0 ? (
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-foreground/60" />
                 ) : null}
               </button>
               <button
@@ -647,9 +649,8 @@ export default function Sidebar({
                                 </span>
 
                                 {isStreaming && (
-                                  <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                                  <span className="inline-flex items-center justify-center shrink-0 mr-1.5" title="Generating response...">
+                                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                                   </span>
                                 )}
 
@@ -804,9 +805,8 @@ export default function Sidebar({
 
                                 {/* Glowing animated ping dot if generating in background */}
                                 {isStreaming && (
-                                  <span className="relative flex h-2 w-2 shrink-0 mr-1.5" title="Generating response...">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                                  <span className="inline-flex items-center justify-center shrink-0 mr-1.5" title="Generating response...">
+                                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                                   </span>
                                 )}
 

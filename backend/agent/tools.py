@@ -145,23 +145,28 @@ async def _load_document_chunks(
     db: AsyncSession,
     limit: int = 20,
 ) -> list[dict]:
-    result = await db.execute(
-        select(models.Chunk)
-        .where(models.Chunk.document_id.in_(document_ids))
-        .order_by(models.Chunk.document_id, models.Chunk.chunk_index)
-        .limit(limit)
-    )
-
-    return [
-        {
-            "chunk_id": chunk.chunk_id,
-            "page_label": chunk.page_number,
-            "source": chunk.source,
-            "text": chunk.page_content or "",
-        }
-        for chunk in result.scalars().all()
-        if chunk.page_content
-    ]
+    if not document_ids:
+        return []
+    per_doc_limit = max(3, limit // len(document_ids))
+    chunks: list[dict] = []
+    for doc_id in document_ids:
+        result = await db.execute(
+            select(models.Chunk)
+            .where(models.Chunk.document_id == doc_id)
+            .order_by(models.Chunk.chunk_index)
+            .limit(per_doc_limit)
+        )
+        for chunk in result.scalars().all():
+            if chunk.page_content:
+                chunks.append(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "page_label": chunk.page_number,
+                        "source": chunk.source,
+                        "text": chunk.page_content,
+                    }
+                )
+    return chunks
 
 
 def _format_context(chunks: list[dict], max_chars: int = 12000) -> str:
@@ -432,12 +437,17 @@ async def generate_quiz_impl(
 
 
 #Retriever
-async def retrieve_from_document_impl(query: str | RetrievalQuery, document_ids: list[int], db: AsyncSession):
+async def retrieve_from_document_impl(
+    query: str | RetrievalQuery,
+    document_ids: list[int],
+    db: AsyncSession,
+    top_n: int = 10,
+):
     """Tool: Search document via RAG."""
     retriever = Retriever(
         document_ids=document_ids,
         db=db
     )
 
-    result = await retriever.similarity_search(query)
+    result = await retriever.similarity_search(query, k=top_n)
     return result

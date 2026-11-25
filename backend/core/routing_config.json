@@ -3,7 +3,7 @@
   "settings": {
     "default_cooldown_seconds": 60.0,
     "max_retries": 1,
-    "default_timeout_seconds": 10.0,
+    "default_timeout_seconds": 20.0,
     "enable_telemetry": true
   },
   "chains": {
@@ -23,7 +23,7 @@
       { "id": "gonka_minimax", "label": "Gonka MiniMax", "enabled": true },
       { "id": "gonka_glm", "label": "Gonka GLM", "enabled": true },
       { "id": "kilo_free", "label": "Kilo Free", "enabled": true },
-      { "id": "nvidia_nim", "label": "Nvidia NIM", "enabled": true },
+      { "id": "nvidia_nim", "label": "Nvidia NIM", "enabled": false },
       { "id": "ollama", "label": "Ollama", "enabled": true }
     ],
     "general_chat": [
@@ -38,7 +38,7 @@
       { "id": "cloudflare_3b", "label": "Cloudflare 3B", "enabled": true },
       { "id": "kilo_free", "label": "Kilo Free", "enabled": true },
       { "id": "groq_secondary", "label": "Groq Secondary (120B)", "enabled": true },
-      { "id": "nvidia_nim", "label": "Nvidia NIM", "enabled": true },
+      { "id": "nvidia_nim", "label": "Nvidia NIM", "enabled": false },
       { "id": "openrouter", "label": "OpenRouter", "enabled": true },
       { "id": "groq_third", "label": "Groq Third (120B)", "enabled": true },
       { "id": "ollama", "label": "Ollama", "enabled": true }

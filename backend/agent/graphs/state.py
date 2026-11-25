@@ -35,6 +35,7 @@ class ResearchState(TypedDict, total=False):
     research_query: str
     history: list[dict[str, str]]
     document_ids: list[int]
+    document_names: list[str]
     db: Any
 
     execution_plan: dict[str, Any]
@@ -57,6 +58,7 @@ class RetrieverState(TypedDict, total=False):
     query: str | RetrievalQuery
     history: list[dict[str, str]]
     document_ids: list[int]
+    document_names: list[str]
     db: Any
 
     needs_decomposition: bool
@@ -106,12 +108,14 @@ def create_research_state(
     query: str,
     history: list[dict[str, str]] | None = None,
     document_ids: list[int] | None = None,
+    document_names: list[str] | None = None,
     db: Any | None = None,
 ) -> ResearchState:
     return {
         "research_query": query,
         "history": history or [],
         "document_ids": document_ids or [],
+        "document_names": document_names or [],
         "db": db,
         "execution_plan": {},
         "need_web": False,
@@ -131,12 +135,14 @@ def create_retriever_state(
     query: str,
     history: list[dict[str, str]] | None = None,
     document_ids: list[int] | None = None,
+    document_names: list[str] | None = None,
     db: Any | None = None,
 ) -> RetrieverState:
     return {
         "query": query,
         "history": history or [],
         "document_ids": document_ids or [],
+        "document_names": document_names or [],
         "db": db,
         "needs_decomposition": False,
         "subqueries": [],

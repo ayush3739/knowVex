@@ -48,6 +48,7 @@ class RetrievalQuery(BaseModel):
     original_query: str
     semantic_query: str
     keyword_query: str
+    target_document_ids: list[int] | None = None
 
 t0 = time.perf_counter()
 class Retriever():
@@ -286,14 +287,15 @@ class Retriever():
             t3 = time.perf_counter()
             # Rerank top merged results using CrossEncoder, fall back gracefully
             top_for_rerank = merged_results[:settings.reranker_input_chunks]
+            effective_top_n = max(1, min(k, settings.llm_context_chunks))
             try:
-                ranked_chunks, max_score = await self.rerank_(original_query, top_for_rerank, top_n=settings.llm_context_chunks)
+                ranked_chunks, max_score = await self.rerank_(semantic_query, top_for_rerank, top_n=effective_top_n)
                 chunks_for_context = ranked_chunks
             except Exception as e:
                 import traceback
                 print(f"Reranker failed: {e}")
                 print(traceback.format_exc())
-                chunks_for_context = top_for_rerank[:10]
+                chunks_for_context = top_for_rerank[:effective_top_n]
             print("Rerank:", time.perf_counter() - t3)
 
             # Build structured chunk list for output

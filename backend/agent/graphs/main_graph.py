@@ -347,6 +347,7 @@ async def document_qa(state: MainState) -> dict:
             query=query,
             history=state.get("history", []),
             document_ids=state.get("document_ids", []),
+            document_names=state.get("document_names", []),
             db=state.get("db"),
         )
     )
@@ -397,6 +398,7 @@ async def research_system(state: MainState) -> dict:
             query=state["user_query"],
             history=state.get("history", []),
             document_ids=state.get("document_ids", []),
+            document_names=state.get("document_names", []),
             db=state.get("db"),
         )
     )

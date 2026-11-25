@@ -49,9 +49,23 @@ def _parse_json_object(text: str) -> dict:
             return {}
 
 
+def _format_available_documents(state: RetrieverState) -> str:
+    doc_ids = state.get("document_ids", []) or []
+    doc_names = state.get("document_names", []) or []
+    if not doc_ids:
+        return "No documents attached."
+    lines = []
+    for idx, doc_id in enumerate(doc_ids):
+        name = doc_names[idx] if idx < len(doc_names) else f"Document {doc_id}"
+        lines.append(f"- id={doc_id}: {name}")
+    return "\n".join(lines)
+
+
 @log_node("retriever", "check_decomposition")
 async def check_decomposition(state: RetrieverState) -> dict:
     original_query = state["query"]
+    allowed_doc_ids = set(state.get("document_ids", []) or [])
+    docs_block = _format_available_documents(state)
     history_text = "\n".join(
         f"{item.get('role', '')}: {item.get('content', '')}"
         for item in state.get("history", [])[-settings.history_message_limit:]
@@ -60,7 +74,11 @@ async def check_decomposition(state: RetrieverState) -> dict:
     prompt = f"""Decide whether this retrieval query should be split into subqueries.
 Also, optimize each query (or subquery) by creating a 'semantic_query' for vector search and a 'keyword_query' for BM25 search.
 
-Use the conversation history to resolve vague references such as "this topic", "them", "that", or "the PDF". Every returned query must be standalone and understandable without the history.
+Use the Available Documents list and Conversation History to resolve vague references such as "this topic", "them", "each one", "that", or "the PDF". Every returned query must be standalone and understandable without the history.
+
+Rules for Multi-Document Decomposition & Targeting:
+- If the user asks about multiple documents or each/all documents (e.g., "notes on each document", "compare A and B"), set needs_decomposition=true and create one subquery per relevant document.
+- When a subquery targets specific document(s) from Available Documents, set "target_document_ids" to a list of their integer IDs (e.g., [12]). If a subquery applies to all documents or no specific document can be matched, set "target_document_ids": null.
 
 Rules for Semantic Query:
 - Preserve the exact meaning of the user's question, but convert it into a declarative statement or highly descriptive natural language phrase.
@@ -79,12 +97,16 @@ Return JSON only in this exact format:
         {{
             "original_query": "...",
             "semantic_query": "...",
-            "keyword_query": "..."
+            "keyword_query": "...",
+            "target_document_ids": [12]
         }}
     ]
 }}
 
 If it's a simple, direct question, use needs_decomposition=false and provide exactly one query object in the list.
+
+Available Documents:
+{docs_block}
 
 Conversation History:
 {history_text or "No previous conversation."}
@@ -97,6 +119,12 @@ User Query: {original_query}"""
     queries = []
     for q in raw_queries:
         try:
+            raw_targets = q.get("target_document_ids")
+            if isinstance(raw_targets, list) and allowed_doc_ids:
+                valid_targets = [int(d) for d in raw_targets if isinstance(d, (int, str)) and str(d).isdigit() and int(d) in allowed_doc_ids]
+                q = {**q, "target_document_ids": valid_targets or None}
+            else:
+                q = {**q, "target_document_ids": None}
             queries.append(RetrievalQuery(**q))
         except Exception:
             pass
@@ -112,7 +140,7 @@ User Query: {original_query}"""
     print(f"\n--- DEBUG check_decomposition ---")
     print(f"Needs Decomposition: {result.get('needs_decomposition', False)}")
     for i, q in enumerate(queries):
-        print(f"Query {i+1}:")
+        print(f"Query {i+1} (docs={q.target_document_ids}):")
         print(f"  Semantic: {q.semantic_query}")
         print(f"  Keyword:  {q.keyword_query}")
     print(f"---------------------------------\n")
@@ -127,10 +155,15 @@ def route_decomposition(state: RetrieverState) -> str:
     return "parallel_retrieval" if state.get("needs_decomposition") else "simple_retrieval"
 
 
-async def _retrieve(query: str | RetrievalQuery, state: RetrieverState) -> dict:
-    document_ids = state.get("document_ids", [])
+async def _retrieve(query: str | RetrievalQuery, state: RetrieverState, top_n: int = 10) -> dict:
+    default_doc_ids = state.get("document_ids", [])
+    target_ids = (
+        query.target_document_ids
+        if isinstance(query, RetrievalQuery) and query.target_document_ids
+        else default_doc_ids
+    )
     db = state.get("db")
-    if not document_ids or db is None:
+    if not target_ids or db is None:
         return {
             "chunks": [],
             "confidence": 0.0,
@@ -138,8 +171,9 @@ async def _retrieve(query: str | RetrievalQuery, state: RetrieverState) -> dict:
         }
     return await retrieve_from_document_impl(
         query=query,
-        document_ids=document_ids,
+        document_ids=target_ids,
         db=db,
+        top_n=top_n,
     )
 
 
@@ -150,8 +184,9 @@ async def parallel_retrieval(state: RetrieverState) -> dict:
     used_vector_db = False
 
     queries = state.get("queries") or [state["query"]]
+    per_query_k = max(4, min(settings.llm_context_chunks, 30 // max(1, len(queries))))
     for q in queries:
-        result = await _retrieve(q, state)
+        result = await _retrieve(q, state, top_n=per_query_k)
         all_chunks.extend(result.get("chunks", []))
         if result.get("confidence") is not None:
             confidence_scores.append(float(result["confidence"]))

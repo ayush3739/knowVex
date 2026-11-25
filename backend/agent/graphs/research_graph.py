@@ -85,10 +85,17 @@ async def research_planner(state: ResearchState) -> dict:
         for item in state.get("history", [])[-settings.history_message_limit:]
         if item.get("content")
     )
+    doc_names = state.get("document_names", [])
+    docs_text = (
+        "\n".join(f"- {name}" for name in doc_names)
+        if doc_names
+        else "No documents attached."
+    )
     planner_input = (
+        f"Attached documents:\n{docs_text}\n\n"
         f"Conversation history:\n{history_text or 'No previous conversation.'}\n\n"
         f"Current research request:\n{state['research_query']}\n\n"
-        "Resolve pronouns and vague references using the conversation history. "
+        "Resolve pronouns and vague references using the attached documents and conversation history. "
         "Return standalone queries that can be sent directly to document retrieval "
         "and web search."
     )
@@ -120,6 +127,7 @@ async def call_retriever_subagent(state: ResearchState) -> dict:
             query=query,
             history=state.get("history", []),
             document_ids=state.get("document_ids", []),
+            document_names=state.get("document_names", []),
             db=state.get("db"),
         )
     )

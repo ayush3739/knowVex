@@ -14,6 +14,7 @@ import { formatResetTime } from "../lib/formatters";
 import { motion, AnimatePresence } from "framer-motion";
 import ConfirmDialog from "./ConfirmDialog";
 import BrandLogo, { KnowvexLogoIcon } from "./brand/KnowvexLogo";
+import UserAvatar from "./brand/UserAvatar";
 
 interface SettingsViewProps {
   params: ModelParams;
@@ -500,14 +501,12 @@ export default function SettingsView({ params, onParamChange }: SettingsViewProp
               <div className="space-y-6">
                 {/* Avatar + Info strip */}
                 <div className="flex items-center gap-4 p-5 premium-card">
-                  <div className={cn(
-                    "w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-xl shrink-0 ring-1 transition-all",
-                    isPro
-                      ? "bg-gradient-to-tr from-amber-500/20 via-yellow-500/25 to-amber-400/20 text-amber-700 dark:text-amber-300 ring-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.25)]"
-                      : "bg-primary/15 text-primary ring-primary/15"
-                  )}>
-                    {user?.name?.charAt(0)?.toUpperCase() || "U"}
-                  </div>
+                  <UserAvatar
+                    name={user?.name}
+                    email={user?.email}
+                    role={user?.role}
+                    size="lg"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="text-base font-bold text-foreground truncate">{user?.name || "User"}</p>

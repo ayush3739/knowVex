@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { formatResetTime } from "../lib/formatters";
 import ConfirmDialog from "./ConfirmDialog";
 import BrandLogo from "./brand/KnowvexLogo";
+import UserAvatar from "./brand/UserAvatar";
 
 interface SidebarProps {
   currentTab: string;
@@ -1107,14 +1108,12 @@ export default function Sidebar({
               )}
             >
               <div className="relative flex-shrink-0">
-                <div className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ring-1 transition-all",
-                  isPro
-                    ? "bg-gradient-to-tr from-amber-500/20 via-yellow-500/25 to-amber-400/20 text-amber-700 dark:text-amber-300 ring-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]"
-                    : "bg-primary/20 text-primary ring-border"
-                )}>
-                  {user?.name?.charAt(0)?.toUpperCase() || "U"}
-                </div>
+                <UserAvatar
+                  name={user?.name}
+                  email={user?.email}
+                  role={user?.role}
+                  size="sm"
+                />
                 {isCollapsed && (isPro || isAdmin) && (
                   <span className={cn(
                     "absolute -top-0.5 -right-0.5 rounded-full ring-2 ring-background",

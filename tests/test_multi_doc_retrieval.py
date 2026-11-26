@@ -61,7 +61,7 @@ async def test_parallel_retrieval_passes_per_query_target_ids_and_scaled_top_n(m
             self.db = db
             self.db_lock = db_lock
 
-        async def similarity_search(self, query, k=10):
+        async def similarity_search(self, query, k=10, query_embedding=None):
             calls.append({
                 "semantic": query.semantic_query,
                 "document_ids": self.document_ids,

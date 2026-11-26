@@ -188,7 +188,12 @@ class Retriever():
 
 
 
-    async def similarity_search(self, query: str | RetrievalQuery, k: int = 10):
+    async def similarity_search(
+        self,
+        query: str | RetrievalQuery,
+        k: int = 10,
+        query_embedding: list[float] | None = None,
+    ):
         await self._load_bm25_from_db()
         try:
             if isinstance(query, str):
@@ -202,7 +207,8 @@ class Retriever():
                 original_query = query.original_query
 
             t0 = time.perf_counter()
-            query_embedding = await self.embedding_model.aembed_query(semantic_query)
+            if query_embedding is None:
+                query_embedding = await self.embedding_model.aembed_query(semantic_query)
             print("Embedding:", time.perf_counter() - t0)
 
             t1 = time.perf_counter()

@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import math
 
+from langchain_community.embeddings import JinaEmbeddings
 from langgraph.graph import END, StateGraph
 
 from backend.agent.graphs.state import RetrieverState
@@ -160,6 +161,7 @@ async def _retrieve(
     state: RetrieverState,
     top_n: int = 10,
     db_lock: asyncio.Lock | None = None,
+    query_embedding: list[float] | None = None,
 ) -> dict:
     default_doc_ids = state.get("document_ids", [])
     target_ids = (
@@ -170,7 +172,11 @@ async def _retrieve(
     db = state.get("db")
     if not target_ids or db is None:
         return {"chunks": [], "confidence": 0.0, "used_vector_db": False}
-    return await Retriever(document_ids=target_ids, db=db, db_lock=db_lock).similarity_search(query, k=top_n)
+    return await Retriever(document_ids=target_ids, db=db, db_lock=db_lock).similarity_search(
+        query,
+        k=top_n,
+        query_embedding=query_embedding,
+    )
 
 
 @log_node("retriever", "parallel_retrieval")
@@ -181,15 +187,30 @@ async def parallel_retrieval(state: RetrieverState) -> dict:
 
     queries = state.get("queries") or [state["query"]]
     per_query_k = max(4, min(settings.llm_context_chunks, 30 // max(1, len(queries))))
-    
+
+    # Batch-embed all subqueries in a single Jina API call to avoid N separate roundtrips
+    precomputed_embeddings: list[list[float] | None] = [None] * len(queries)
+    if len(queries) > 1 and settings.jina_key:
+        try:
+            semantic_texts = [
+                q.semantic_query if isinstance(q, RetrievalQuery) else str(q)
+                for q in queries
+            ]
+            embedder = JinaEmbeddings(jina_api_key=settings.jina_key, model_name="jina-embeddings-v3")
+            precomputed_embeddings = await embedder.aembed_documents(semantic_texts)
+        except Exception:
+            precomputed_embeddings = [None] * len(queries)
+
     db_lock = asyncio.Lock()
     sem = asyncio.Semaphore(2)
 
-    async def _bounded_retrieve(query):
+    async def _bounded_retrieve(query, emb):
         async with sem:
-            return await _retrieve(query, state, top_n=per_query_k, db_lock=db_lock)
+            return await _retrieve(query, state, top_n=per_query_k, db_lock=db_lock, query_embedding=emb)
 
-    results = await asyncio.gather(*(_bounded_retrieve(query) for query in queries))
+    results = await asyncio.gather(
+        *(_bounded_retrieve(query, emb) for query, emb in zip(queries, precomputed_embeddings))
+    )
 
     for result in results:
         all_chunks.extend(result.get("chunks", []))

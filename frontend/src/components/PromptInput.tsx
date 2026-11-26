@@ -276,7 +276,7 @@ export default function PromptInput({
               className={cn(
                 "h-8 w-8 rounded-xl transition-all duration-150 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:scale-95",
                 value.trim() && !isProcessing
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer"
+                  ? "bg-foreground text-background hover:opacity-90 shadow-sm cursor-pointer"
                   : "bg-surface-container text-muted-foreground opacity-40 cursor-not-allowed border border-border/50"
               )}
               title="Send prompt (Enter)"

@@ -97,12 +97,12 @@ export function ShinyButton({
 
         /* Brand Variant: Colored background so it doesn't get submerged in dark themes */
         .shiny-cta.shiny-cta-brand {
-          --shiny-cta-bg: #5041d8;
-          --shiny-cta-bg-subtle: #6a5cee;
+          --shiny-cta-bg: #1d4ed8;
+          --shiny-cta-bg-subtle: #2563eb;
           --shiny-cta-fg: #ffffff;
           --shiny-cta-highlight: #93c5fd;
           --shiny-cta-highlight-subtle: #ffffff;
-          background: linear-gradient(135deg, #5b4fe8 0%, #4338ca 100%) padding-box,
+          background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) padding-box,
             conic-gradient(
               from calc(var(--gradient-angle) - var(--gradient-angle-offset)),
               transparent,
@@ -111,11 +111,11 @@ export function ShinyButton({
               var(--shiny-cta-highlight) calc(var(--gradient-percent) * 3),
               transparent calc(var(--gradient-percent) * 4)
             ) border-box;
-          box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.45), 0 8px 25px -4px rgba(91, 79, 232, 0.55);
+          box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.45), 0 8px 25px -4px rgba(37, 99, 235, 0.55);
         }
 
         .shiny-cta.shiny-cta-brand:hover {
-          background: linear-gradient(135deg, #665af0 0%, #4a3fd8 100%) padding-box,
+          background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) padding-box,
             conic-gradient(
               from calc(var(--gradient-angle) - var(--gradient-angle-offset)),
               transparent,
@@ -124,7 +124,7 @@ export function ShinyButton({
               var(--shiny-cta-highlight) calc(var(--gradient-percent) * 3),
               transparent calc(var(--gradient-percent) * 4)
             ) border-box;
-          box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.6), 0 12px 32px -2px rgba(91, 79, 232, 0.7);
+          box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.6), 0 12px 32px -2px rgba(37, 99, 235, 0.7);
         }
 
         .shiny-cta::before,
@@ -246,8 +246,8 @@ export function ShinyButton({
 
         .shiny-cta.shiny-cta-static:hover {
           background: linear-gradient(var(--shiny-cta-bg), var(--shiny-cta-bg)) padding-box,
-            linear-gradient(135deg, #5b4fe8, rgba(255, 255, 255, 0.2)) border-box;
-          box-shadow: inset 0 0 0 1px var(--shiny-cta-bg-subtle), 0 0 14px -3px rgba(91, 79, 232, 0.4);
+            linear-gradient(135deg, #3b82f6, rgba(255, 255, 255, 0.2)) border-box;
+          box-shadow: inset 0 0 0 1px var(--shiny-cta-bg-subtle), 0 0 14px -3px rgba(37, 99, 235, 0.4);
           transform: translateY(-0.5px);
         }
 

@@ -55,28 +55,34 @@ async def test_check_decomposition_scopes_target_document_ids(monkeypatch):
 async def test_parallel_retrieval_passes_per_query_target_ids_and_scaled_top_n(monkeypatch):
     calls = []
 
-    async def fake_retrieve_impl(query, document_ids, db, top_n=10):
-        calls.append({
-            "semantic": query.semantic_query,
-            "document_ids": list(document_ids),
-            "top_n": top_n,
-        })
-        doc_id = document_ids[0]
-        return {
-            "chunks": [
-                {
-                    "chunk_id": f"chunk_{doc_id}_{i}",
-                    "page_label": i + 1,
-                    "source": f"doc_{doc_id}.pdf",
-                    "text": f"content from doc {doc_id} chunk {i}",
-                }
-                for i in range(top_n)
-            ],
-            "confidence": 0.85,
-            "used_vector_db": True,
-        }
+    class FakeRetriever:
+        def __init__(self, document_ids, db, db_lock=None):
+            self.document_ids = list(document_ids)
+            self.db = db
+            self.db_lock = db_lock
 
-    monkeypatch.setattr(retriever_subagent, "retrieve_from_document_impl", fake_retrieve_impl)
+        async def similarity_search(self, query, k=10):
+            calls.append({
+                "semantic": query.semantic_query,
+                "document_ids": self.document_ids,
+                "top_n": k,
+            })
+            doc_id = self.document_ids[0]
+            return {
+                "chunks": [
+                    {
+                        "chunk_id": f"chunk_{doc_id}_{i}",
+                        "page_label": i + 1,
+                        "source": f"doc_{doc_id}.pdf",
+                        "text": f"content from doc {doc_id} chunk {i}",
+                    }
+                    for i in range(k)
+                ],
+                "confidence": 0.85,
+                "used_vector_db": True,
+            }
+
+    monkeypatch.setattr(retriever_subagent, "Retriever", FakeRetriever)
 
     queries = [
         RetrievalQuery(

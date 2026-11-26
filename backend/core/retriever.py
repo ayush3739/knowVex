@@ -7,6 +7,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 import pickle
 from backend.services.llm_provider import LLMProvider
 import asyncio
+from contextlib import nullcontext
 from pathlib import Path
 from backend.core.utils import simple_tokenize
 from backend.core.config import settings
@@ -52,10 +53,11 @@ class RetrievalQuery(BaseModel):
 
 t0 = time.perf_counter()
 class Retriever():
-    def __init__(self, document_ids: list[int], db: AsyncSession):
+    def __init__(self, document_ids: list[int], db: AsyncSession, db_lock: asyncio.Lock | None = None):
         try:
             self.document_ids = document_ids
             self.db = db
+            self.db_lock = db_lock
             self.llm_provider = LLMProvider()
 
             self.llm = OllamaLLM(
@@ -161,10 +163,11 @@ class Retriever():
             return
         self.bm25_loaded = True
         try:
-            result = await self.db.execute(
-                select(models.Document).where(models.Document.id.in_(self.document_ids))
-            )
-            docs = result.scalars().all()
+            async with (self.db_lock or nullcontext()):
+                result = await self.db.execute(
+                    select(models.Document).where(models.Document.id.in_(self.document_ids))
+                )
+                docs = result.scalars().all()
             for doc in docs:
                 if not doc.bm25_path: continue
                 bm25_file = self.base_dir / doc.bm25_path
@@ -211,21 +214,22 @@ class Retriever():
             vector_results = []
 
             try:
-                results = await self.db.execute(
-                    select(
-                        models.Chunk,
-                        models.Chunk.embedding.cosine_distance(
-                            query_embedding
-                        ).label("distance")
+                async with (self.db_lock or nullcontext()):
+                    results = await self.db.execute(
+                        select(
+                            models.Chunk,
+                            models.Chunk.embedding.cosine_distance(
+                                query_embedding
+                            ).label("distance")
+                        )
+                        .where(
+                            models.Chunk.document_id.in_(self.document_ids)
+                        )
+                        .order_by("distance")
+                        .limit(max(k, settings.vector_output_chunks))
                     )
-                    .where(
-                        models.Chunk.document_id.in_(self.document_ids)
-                    )
-                    .order_by("distance")
-                    .limit(max(k, settings.vector_output_chunks))
-                )
 
-                rows = results.all()
+                    rows = results.all()
 
                 for chunk, distance in rows:
                     vector_results.append(

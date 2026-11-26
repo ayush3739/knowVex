@@ -26,10 +26,10 @@ from langgraph.graph import END, StateGraph
 
 from backend.agent.graphs.state import RetrieverState
 from backend.agent.graphs.node_logging import log_node
-from backend.agent.tools import retrieve_from_document_impl
 from backend.core.config import settings
-from backend.core.retriever import RetrievalQuery
+from backend.core.retriever import RetrievalQuery, Retriever
 from backend.services.llm_provider import LLMProvider
+import asyncio
 
 
 llm = LLMProvider()
@@ -155,7 +155,12 @@ def route_decomposition(state: RetrieverState) -> str:
     return "parallel_retrieval" if state.get("needs_decomposition") else "simple_retrieval"
 
 
-async def _retrieve(query: str | RetrievalQuery, state: RetrieverState, top_n: int = 10) -> dict:
+async def _retrieve(
+    query: str | RetrievalQuery,
+    state: RetrieverState,
+    top_n: int = 10,
+    db_lock: asyncio.Lock | None = None,
+) -> dict:
     default_doc_ids = state.get("document_ids", [])
     target_ids = (
         query.target_document_ids
@@ -164,17 +169,8 @@ async def _retrieve(query: str | RetrievalQuery, state: RetrieverState, top_n: i
     )
     db = state.get("db")
     if not target_ids or db is None:
-        return {
-            "chunks": [],
-            "confidence": 0.0,
-            "used_vector_db": False,
-        }
-    return await retrieve_from_document_impl(
-        query=query,
-        document_ids=target_ids,
-        db=db,
-        top_n=top_n,
-    )
+        return {"chunks": [], "confidence": 0.0, "used_vector_db": False}
+    return await Retriever(document_ids=target_ids, db=db, db_lock=db_lock).similarity_search(query, k=top_n)
 
 
 @log_node("retriever", "parallel_retrieval")
@@ -185,8 +181,17 @@ async def parallel_retrieval(state: RetrieverState) -> dict:
 
     queries = state.get("queries") or [state["query"]]
     per_query_k = max(4, min(settings.llm_context_chunks, 30 // max(1, len(queries))))
-    for q in queries:
-        result = await _retrieve(q, state, top_n=per_query_k)
+    
+    db_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(2)
+
+    async def _bounded_retrieve(query):
+        async with sem:
+            return await _retrieve(query, state, top_n=per_query_k, db_lock=db_lock)
+
+    results = await asyncio.gather(*(_bounded_retrieve(query) for query in queries))
+
+    for result in results:
         all_chunks.extend(result.get("chunks", []))
         if result.get("confidence") is not None:
             confidence_scores.append(float(result["confidence"]))

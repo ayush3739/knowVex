@@ -398,13 +398,13 @@ export default function AdminView() {
                               className={cn(
                                 "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border",
                                 roleLower === "admin"
-                                  ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                                  ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                   : roleLower === "pro"
                                   ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-bold shadow-[0_0_8px_rgba(245,158,11,0.2)]"
                                   : "bg-surface-container text-muted-foreground border-border"
                               )}
                             >
-                              {roleLower === "admin" && <Shield className="w-3 h-3 text-purple-400" />}
+                              {roleLower === "admin" && <Shield className="w-3 h-3 text-blue-400" />}
                               {roleLower === "pro" && <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />}
                               <span className="capitalize">{u.role}</span>
                             </span>
@@ -433,7 +433,7 @@ export default function AdminView() {
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
                               {isSelf ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/25">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/25">
                                   <Shield className="w-3 h-3" />
                                   Current Admin (You)
                                 </span>
@@ -457,7 +457,7 @@ export default function AdminView() {
                                       type="button"
                                       disabled={updateRoleMutation.isPending}
                                       onClick={() => updateRoleMutation.mutate({ userId: u.id, role: "admin" })}
-                                      className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                                      className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                                       title="Promote to Enterprise Administrator"
                                     >
                                       <Shield className="w-3 h-3" />

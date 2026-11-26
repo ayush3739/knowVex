@@ -53,7 +53,7 @@ export function AppShell({
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none hidden dark:block">
         <div className="ambient-orb orb-1 bg-primary/5 w-[500px] h-[500px] -top-[200px] -left-[200px]" />
         <div className="ambient-orb orb-2 bg-secondary/5 w-[600px] h-[600px] -bottom-[300px] -right-[100px]" />
-        <div className="ambient-orb orb-3 bg-violet-600/5 w-[450px] h-[450px] top-[30%] left-[55%]" />
+        <div className="ambient-orb orb-3 bg-blue-500/5 w-[450px] h-[450px] top-[30%] left-[55%]" />
       </div>
 
       {/* Mobile Top Navigation rail bar */}
